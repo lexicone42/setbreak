@@ -1,6 +1,7 @@
 use ferrous_waves::AudioFile;
 use std::path::Path;
 use std::process::Command;
+use std::sync::atomic::{AtomicU64, Ordering};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -41,9 +42,11 @@ fn load_shn_via_ffmpeg(path: &Path) -> Result<AudioFile, DecodeError> {
         return Err(DecodeError::FfmpegNotFound);
     }
 
-    // Create a temp file for the WAV output
+    // Unique temp file per call — atomic counter avoids race with parallel rayon workers
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let id = COUNTER.fetch_add(1, Ordering::Relaxed);
     let tmp_dir = std::env::temp_dir();
-    let tmp_wav = tmp_dir.join(format!("setbreak_shn_{}.wav", std::process::id()));
+    let tmp_wav = tmp_dir.join(format!("setbreak_shn_{}_{}.wav", std::process::id(), id));
 
     let output = Command::new("ffmpeg")
         .args([
