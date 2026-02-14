@@ -58,8 +58,14 @@ impl Database {
         if version < 2 {
             self.migrate_v2()?;
         }
+        if version < 3 {
+            self.migrate_v3()?;
+        }
+        if version < 4 {
+            self.migrate_v4()?;
+        }
 
-        self.conn.pragma_update(None, "user_version", 2)?;
+        self.conn.pragma_update(None, "user_version", 4)?;
         Ok(())
     }
 
@@ -300,6 +306,92 @@ impl Database {
             CREATE INDEX IF NOT EXISTS idx_transitions_track ON track_transitions(track_id);
             ",
         )?;
+
+        Ok(())
+    }
+
+    /// V3: Spectral features for bliss-audio parity (flatness, ZCR, MFCC)
+    fn migrate_v3(&self) -> Result<()> {
+        let new_columns = [
+            "spectral_flatness_mean REAL",
+            "spectral_flatness_std REAL",
+            "zcr_mean REAL",
+            "zcr_std REAL",
+            "mfcc_0_mean REAL",
+            "mfcc_0_std REAL",
+            "mfcc_1_mean REAL",
+            "mfcc_1_std REAL",
+            "mfcc_2_mean REAL",
+            "mfcc_2_std REAL",
+            "mfcc_3_mean REAL",
+            "mfcc_3_std REAL",
+            "mfcc_4_mean REAL",
+            "mfcc_4_std REAL",
+            "mfcc_5_mean REAL",
+            "mfcc_5_std REAL",
+            "mfcc_6_mean REAL",
+            "mfcc_6_std REAL",
+            "mfcc_7_mean REAL",
+            "mfcc_7_std REAL",
+            "mfcc_8_mean REAL",
+            "mfcc_8_std REAL",
+            "mfcc_9_mean REAL",
+            "mfcc_9_std REAL",
+            "mfcc_10_mean REAL",
+            "mfcc_10_std REAL",
+            "mfcc_11_mean REAL",
+            "mfcc_11_std REAL",
+            "mfcc_12_mean REAL",
+            "mfcc_12_std REAL",
+        ];
+
+        for col in &new_columns {
+            let sql = format!("ALTER TABLE analysis_results ADD COLUMN {col}");
+            match self.conn.execute(&sql, []) {
+                Ok(_) => {}
+                Err(rusqlite::Error::SqliteFailure(err, _))
+                    if err.code == rusqlite::ffi::ErrorCode::Unknown
+                        || err.extended_code == 1 =>
+                {
+                    // Column already exists — fine
+                }
+                Err(e) => return Err(e.into()),
+            }
+        }
+
+        Ok(())
+    }
+
+    /// V4: Spectral bandwidth, sub-band energy ratios, valence/arousal
+    fn migrate_v4(&self) -> Result<()> {
+        let new_columns = [
+            "spectral_bandwidth_mean REAL",
+            "spectral_bandwidth_std REAL",
+            "sub_band_bass_mean REAL",
+            "sub_band_bass_std REAL",
+            "sub_band_mid_mean REAL",
+            "sub_band_mid_std REAL",
+            "sub_band_high_mean REAL",
+            "sub_band_high_std REAL",
+            "sub_band_presence_mean REAL",
+            "sub_band_presence_std REAL",
+            "valence_score REAL",
+            "arousal_score REAL",
+        ];
+
+        for col in &new_columns {
+            let sql = format!("ALTER TABLE analysis_results ADD COLUMN {col}");
+            match self.conn.execute(&sql, []) {
+                Ok(_) => {}
+                Err(rusqlite::Error::SqliteFailure(err, _))
+                    if err.code == rusqlite::ffi::ErrorCode::Unknown
+                        || err.extended_code == 1 =>
+                {
+                    // Column already exists — fine
+                }
+                Err(e) => return Err(e.into()),
+            }
+        }
 
         Ok(())
     }

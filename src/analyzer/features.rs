@@ -19,6 +19,24 @@ pub fn extract(track_id: i64, r: &AnalysisResult) -> ExtractionResult {
     let (centroid_mean, centroid_std) = mean_std(&r.spectral.spectral_centroid);
     let (flux_mean, flux_std) = mean_std(&r.spectral.spectral_flux);
     let (rolloff_mean, rolloff_std) = mean_std(&r.spectral.spectral_rolloff);
+    let (flatness_mean, flatness_std) = mean_std(&r.spectral.spectral_flatness);
+    let (bandwidth_mean, bandwidth_std) = mean_std(&r.spectral.spectral_bandwidth);
+    let (zcr_mean, zcr_std) = mean_std(&r.spectral.zero_crossing_rate);
+    let (sub_bass_mean, sub_bass_std) = mean_std(&r.spectral.sub_band_energy_bass);
+    let (sub_mid_mean, sub_mid_std) = mean_std(&r.spectral.sub_band_energy_mid);
+    let (sub_high_mean, sub_high_std) = mean_std(&r.spectral.sub_band_energy_high);
+    let (sub_presence_mean, sub_presence_std) = mean_std(&r.spectral.sub_band_energy_presence);
+
+    // MFCC: per-coefficient mean/std (13 coefficients)
+    let mfcc_stats: Vec<(f64, f64)> = (0..13)
+        .map(|i| {
+            if i < r.spectral.mfcc.len() {
+                mean_std(&r.spectral.mfcc[i])
+            } else {
+                (0.0, 0.0)
+            }
+        })
+        .collect();
 
     // Pitch confidence: mean of all frame confidences
     let pitch_confidence_mean = if r.pitch.pitch_track.frames.is_empty() {
@@ -120,6 +138,46 @@ pub fn extract(track_id: i64, r: &AnalysisResult) -> ExtractionResult {
         spectral_flux_std: Some(flux_std),
         spectral_rolloff_mean: Some(rolloff_mean),
         spectral_rolloff_std: Some(rolloff_std),
+        spectral_flatness_mean: Some(flatness_mean),
+        spectral_flatness_std: Some(flatness_std),
+        spectral_bandwidth_mean: Some(bandwidth_mean),
+        spectral_bandwidth_std: Some(bandwidth_std),
+        zcr_mean: Some(zcr_mean),
+        zcr_std: Some(zcr_std),
+        sub_band_bass_mean: Some(sub_bass_mean),
+        sub_band_bass_std: Some(sub_bass_std),
+        sub_band_mid_mean: Some(sub_mid_mean),
+        sub_band_mid_std: Some(sub_mid_std),
+        sub_band_high_mean: Some(sub_high_mean),
+        sub_band_high_std: Some(sub_high_std),
+        sub_band_presence_mean: Some(sub_presence_mean),
+        sub_band_presence_std: Some(sub_presence_std),
+        mfcc_0_mean: Some(mfcc_stats[0].0),
+        mfcc_0_std: Some(mfcc_stats[0].1),
+        mfcc_1_mean: Some(mfcc_stats[1].0),
+        mfcc_1_std: Some(mfcc_stats[1].1),
+        mfcc_2_mean: Some(mfcc_stats[2].0),
+        mfcc_2_std: Some(mfcc_stats[2].1),
+        mfcc_3_mean: Some(mfcc_stats[3].0),
+        mfcc_3_std: Some(mfcc_stats[3].1),
+        mfcc_4_mean: Some(mfcc_stats[4].0),
+        mfcc_4_std: Some(mfcc_stats[4].1),
+        mfcc_5_mean: Some(mfcc_stats[5].0),
+        mfcc_5_std: Some(mfcc_stats[5].1),
+        mfcc_6_mean: Some(mfcc_stats[6].0),
+        mfcc_6_std: Some(mfcc_stats[6].1),
+        mfcc_7_mean: Some(mfcc_stats[7].0),
+        mfcc_7_std: Some(mfcc_stats[7].1),
+        mfcc_8_mean: Some(mfcc_stats[8].0),
+        mfcc_8_std: Some(mfcc_stats[8].1),
+        mfcc_9_mean: Some(mfcc_stats[9].0),
+        mfcc_9_std: Some(mfcc_stats[9].1),
+        mfcc_10_mean: Some(mfcc_stats[10].0),
+        mfcc_10_std: Some(mfcc_stats[10].1),
+        mfcc_11_mean: Some(mfcc_stats[11].0),
+        mfcc_11_std: Some(mfcc_stats[11].1),
+        mfcc_12_mean: Some(mfcc_stats[12].0),
+        mfcc_12_std: Some(mfcc_stats[12].1),
 
         // Temporal
         tempo_bpm: r.temporal.tempo.map(|t| t as f64),
@@ -186,6 +244,10 @@ pub fn extract(track_id: i64, r: &AnalysisResult) -> ExtractionResult {
         // Classification
         classification_music_score,
         hnr,
+
+        // Emotion scores — computed by jam_metrics
+        valence_score: None,
+        arousal_score: None,
 
         // Jam scores — computed separately by jam_metrics
         energy_score: None,

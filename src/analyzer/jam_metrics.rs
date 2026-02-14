@@ -15,6 +15,8 @@ pub fn compute_jam_scores(analysis: &mut NewAnalysis, result: &AnalysisResult) {
     analysis.build_quality_score = Some(build_quality_score(analysis, result));
     analysis.exploratory_score = Some(exploratory_score(analysis, result));
     analysis.transcendence_score = Some(transcendence_score(analysis, result));
+    analysis.valence_score = Some(valence_score(analysis));
+    analysis.arousal_score = Some(arousal_score(analysis));
 }
 
 // ── Energy Score (0-100) ──────────────────────────────────────────────
@@ -333,6 +335,62 @@ fn transcendence_score(a: &NewAnalysis, r: &AnalysisResult) -> f64 {
     (peak_contrib + sustained_contrib + tension_contrib + groove_contrib + richness_contrib).clamp(0.0, 100.0)
 }
 
+// ── Valence Score (0-100) ──────────────────────────────────────────────
+// Russell circumplex horizontal axis: happy (high) ↔ sad (low).
+// Inputs: mode (major/minor), tempo, spectral centroid brightness, harmonic simplicity.
+fn valence_score(a: &NewAnalysis) -> f64 {
+    // Mode component (30 pts): major → happy, minor → sad
+    let mode_val = match &a.estimated_key {
+        Some(k) if k.contains("major") => 1.0,
+        Some(k) if k.contains("minor") => 0.0,
+        _ => 0.5, // Unknown/ambiguous
+    };
+    let mode_contrib = mode_val * 30.0;
+
+    // Tempo component (25 pts): faster → happier. 60 bpm = 0, 180 bpm = 1
+    let tempo = a.tempo_bpm.unwrap_or(120.0);
+    let tempo_norm = ((tempo - 60.0) / 120.0).clamp(0.0, 1.0);
+    let tempo_contrib = tempo_norm * 25.0;
+
+    // Brightness component (25 pts): brighter timbre → happier
+    let centroid = a.spectral_centroid_mean.unwrap_or(0.0);
+    let bright_norm = ((centroid - 500.0) / 4500.0).clamp(0.0, 1.0);
+    let bright_contrib = bright_norm * 25.0;
+
+    // Simplicity component (20 pts): simpler harmony → happier
+    let complexity = a.harmonic_complexity.unwrap_or(0.5);
+    let simplicity = 1.0 - complexity.clamp(0.0, 1.0);
+    let simple_contrib = simplicity * 20.0;
+
+    (mode_contrib + tempo_contrib + bright_contrib + simple_contrib).clamp(0.0, 100.0)
+}
+
+// ── Arousal Score (0-100) ──────────────────────────────────────────────
+// Russell circumplex vertical axis: energetic (high) ↔ calm (low).
+// Inputs: energy level, tempo, spectral flux, loudness.
+fn arousal_score(a: &NewAnalysis) -> f64 {
+    // Energy component (30 pts)
+    let energy = a.energy_level.unwrap_or(0.0);
+    let energy_contrib = energy.clamp(0.0, 1.0) * 30.0;
+
+    // Tempo component (25 pts): faster → more aroused. 60 bpm = 0, 180 bpm = 1
+    let tempo = a.tempo_bpm.unwrap_or(120.0);
+    let tempo_norm = ((tempo - 60.0) / 120.0).clamp(0.0, 1.0);
+    let tempo_contrib = tempo_norm * 25.0;
+
+    // Spectral flux component (20 pts): more change → more arousal
+    let flux = a.spectral_flux_mean.unwrap_or(0.0);
+    let flux_norm = (flux / 50.0).clamp(0.0, 1.0);
+    let flux_contrib = flux_norm * 20.0;
+
+    // Loudness component (25 pts): -40 LUFS = 0, 0 LUFS = 1
+    let lufs = a.lufs_integrated.unwrap_or(-40.0);
+    let lufs_norm = ((lufs + 40.0) / 40.0).clamp(0.0, 1.0);
+    let lufs_contrib = lufs_norm * 25.0;
+
+    (energy_contrib + tempo_contrib + flux_contrib + lufs_contrib).clamp(0.0, 100.0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -352,6 +410,26 @@ mod tests {
             spectral_flux_std: Some(15.0),
             spectral_rolloff_mean: Some(4000.0),
             spectral_rolloff_std: Some(800.0),
+            spectral_flatness_mean: None, spectral_flatness_std: None,
+            spectral_bandwidth_mean: None, spectral_bandwidth_std: None,
+            zcr_mean: None, zcr_std: None,
+            sub_band_bass_mean: None, sub_band_bass_std: None,
+            sub_band_mid_mean: None, sub_band_mid_std: None,
+            sub_band_high_mean: None, sub_band_high_std: None,
+            sub_band_presence_mean: None, sub_band_presence_std: None,
+            mfcc_0_mean: None, mfcc_0_std: None,
+            mfcc_1_mean: None, mfcc_1_std: None,
+            mfcc_2_mean: None, mfcc_2_std: None,
+            mfcc_3_mean: None, mfcc_3_std: None,
+            mfcc_4_mean: None, mfcc_4_std: None,
+            mfcc_5_mean: None, mfcc_5_std: None,
+            mfcc_6_mean: None, mfcc_6_std: None,
+            mfcc_7_mean: None, mfcc_7_std: None,
+            mfcc_8_mean: None, mfcc_8_std: None,
+            mfcc_9_mean: None, mfcc_9_std: None,
+            mfcc_10_mean: None, mfcc_10_std: None,
+            mfcc_11_mean: None, mfcc_11_std: None,
+            mfcc_12_mean: None, mfcc_12_std: None,
             tempo_bpm: Some(120.0),
             beat_count: Some(600),
             onset_count: Some(1200),
@@ -400,6 +478,8 @@ mod tests {
             transition_count: Some(4),
             classification_music_score: Some(0.95),
             hnr: Some(12.0),
+            valence_score: None,
+            arousal_score: None,
             energy_score: None,
             intensity_score: None,
             groove_score: None,
