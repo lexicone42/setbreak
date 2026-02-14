@@ -5,10 +5,9 @@ pub mod jam_metrics;
 use crate::db::models::Track;
 use crate::db::Database;
 use features::ExtractionResult;
-use ferrous_waves::analysis::engine::AnalysisResult;
+use ferrous_waves::analysis::engine::{AnalysisConfig, AnalysisResult};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::path::Path;
-use std::sync::Mutex;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -33,6 +32,12 @@ struct TrackAnalysis {
 }
 
 /// Analyze tracks in parallel using rayon + tokio for the async engine.
+///
+/// Processes tracks in chunks: analyze a chunk in parallel with rayon,
+/// write results to DB, then move to next chunk. This gives:
+/// - Incremental DB progress (resumable on crash)
+/// - Bounded memory (only one chunk of results in memory)
+/// - Visible progress in check_progress.sh
 pub fn analyze_tracks(
     db: &Database,
     force: bool,
@@ -81,60 +86,66 @@ pub fn analyze_tracks(
         .build()
         .unwrap();
 
-    let analyzed = Mutex::new(0u64);
-    let failed = Mutex::new(0u64);
+    let mut analyzed: u64 = 0;
+    let mut failed: u64 = 0;
 
-    // Collect results first (rayon parallel), then write to DB sequentially
-    let results: Vec<_> = pool.install(|| {
-        use rayon::prelude::*;
-        tracks
-            .par_iter()
-            .map(|track| {
-                let result = analyze_single_track(track);
-                pb.inc(1);
-                result
-            })
-            .collect()
-    });
+    // Process in chunks: analyze chunk in parallel, write to DB, repeat.
+    // Chunk size = jobs * 2 gives good parallelism while keeping memory bounded.
+    let chunk_size = jobs * 2;
 
-    // Write results to DB sequentially (SQLite single-writer)
-    for result in results {
-        match result {
-            Ok(ta) => {
-                match db.store_full_analysis(
-                    &ta.extraction.analysis,
-                    &ta.extraction.chords,
-                    &ta.extraction.segments,
-                    &ta.extraction.tension_points,
-                    &ta.extraction.transitions,
-                ) {
-                    Ok(()) => *analyzed.lock().unwrap() += 1,
-                    Err(e) => {
-                        log::error!("DB error storing analysis for track {}: {}", ta.track_id, e);
-                        *failed.lock().unwrap() += 1;
+    for chunk in tracks.chunks(chunk_size) {
+        // Analyze this chunk in parallel
+        let results: Vec<_> = pool.install(|| {
+            use rayon::prelude::*;
+            chunk
+                .par_iter()
+                .map(|track| {
+                    let result = analyze_single_track(track);
+                    pb.inc(1);
+                    result
+                })
+                .collect()
+        });
+
+        // Write this chunk's results to DB immediately
+        for result in results {
+            match result {
+                Ok(ta) => {
+                    match db.store_full_analysis(
+                        &ta.extraction.analysis,
+                        &ta.extraction.chords,
+                        &ta.extraction.segments,
+                        &ta.extraction.tension_points,
+                        &ta.extraction.transitions,
+                    ) {
+                        Ok(()) => analyzed += 1,
+                        Err(e) => {
+                            log::error!(
+                                "DB error storing analysis for track {}: {}",
+                                ta.track_id,
+                                e
+                            );
+                            failed += 1;
+                        }
                     }
                 }
-            }
-            Err(e) => {
-                log::warn!("Analysis failed: {}", e);
-                *failed.lock().unwrap() += 1;
+                Err(e) => {
+                    log::warn!("Analysis failed: {}", e);
+                    failed += 1;
+                }
             }
         }
+
+        pb.set_message(format!("{} stored, {} failed", analyzed, failed));
     }
 
-    let analyzed_count = *analyzed.lock().unwrap();
-    let failed_count = *failed.lock().unwrap();
+    pb.finish_with_message(format!("Done: {} analyzed, {} failed", analyzed, failed));
 
-    pb.finish_with_message(format!("Done: {} analyzed, {} failed", analyzed_count, failed_count));
-
-    Ok(AnalyzeResult {
-        analyzed: analyzed_count,
-        failed: failed_count,
-    })
+    Ok(AnalyzeResult { analyzed, failed })
 }
 
-// Thread-local tokio runtime and analysis engine — reused across tracks on the same thread
-// to avoid the overhead of creating them per-track.
+// Thread-local tokio runtime — reused across tracks on the same rayon thread
+// to avoid the overhead of creating a runtime per-track.
 thread_local! {
     static THREAD_RT: tokio::runtime::Runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -142,22 +153,41 @@ thread_local! {
         .expect("tokio runtime");
 }
 
+/// Analysis config optimized for setbreak's batch processing:
+/// - Skip PNG visualization (we never display it)
+/// - Skip audio fingerprinting (not used yet, future Phase 4)
+/// - Skip per-segment content classification (we use overall classification only)
+/// - Reduce PYIN thresholds from 100 to 25 (4x faster pitch detection)
+/// - Double PYIN hop size (analyze every 2nd frame)
+fn fast_analysis_config() -> AnalysisConfig {
+    AnalysisConfig {
+        skip_visualization: true,
+        skip_fingerprinting: true,
+        skip_classification_segments: true,
+        pyin_threshold_count: 25,
+        pyin_hop_multiplier: 2,
+    }
+}
+
 /// Analyze a single track: decode -> ferrous-waves analyze -> extract features -> compute scores.
-fn analyze_single_track(
-    track: &Track,
-) -> std::result::Result<TrackAnalysis, AnalyzeError> {
+fn analyze_single_track(track: &Track) -> std::result::Result<TrackAnalysis, AnalyzeError> {
     let path = Path::new(&track.file_path);
 
-    log::debug!("Analyzing: {}", path.file_name().and_then(|f| f.to_str()).unwrap_or("?"));
+    log::debug!(
+        "Analyzing: {}",
+        path.file_name().and_then(|f| f.to_str()).unwrap_or("?")
+    );
 
     // Decode audio
     let audio = decode::load_audio(path)?;
 
-    // Run ferrous-waves analysis (reuse thread-local tokio runtime)
-    let engine = ferrous_waves::AnalysisEngine::new().without_cache();
-    let analysis_result: AnalysisResult = THREAD_RT.with(|rt| {
-        rt.block_on(engine.analyze(&audio))
-    }).map_err(|e| AnalyzeError::Engine(e.to_string()))?;
+    // Run ferrous-waves analysis with optimized config
+    let engine = ferrous_waves::AnalysisEngine::new()
+        .without_cache()
+        .with_analysis_config(fast_analysis_config());
+    let analysis_result: AnalysisResult = THREAD_RT
+        .with(|rt| rt.block_on(engine.analyze(&audio)))
+        .map_err(|e| AnalyzeError::Engine(e.to_string()))?;
 
     // Extract all features into DB schema + detail records
     let mut extraction = features::extract(track.id, &analysis_result);
