@@ -1,0 +1,57 @@
+[package]
+name = "setbreak"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Jam-band music library analyzer — scan, analyze, and explore live music"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+# Audio analysis
+ferrous-waves = { path = "../ferrous-waves" }
+
+# Database
+rusqlite = { version = "0.32", features = ["bundled"] }
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# Progress bars
+indicatif = "0.17"
+
+# Tag reading
+lofty = "0.22"
+
+# Parallelism
+rayon = "1.10"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Directory traversal
+walkdir = "2"
+
+# Errors
+anyhow = "1"
+thiserror = "2"
+
+# Timestamps
+chrono = { version = "0.4", features = ["serde"] }
+
+# Filename parsing
+regex = "1"
+
+# XDG paths
+directories = "6"
+
+# Logging
+log = "0.4"
+env_logger = "0.11"
+
+# Async runtime (ferrous-waves analyze() is async)
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+
+[profile.release]
+opt-level = 3
+lto = true
