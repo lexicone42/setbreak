@@ -26,24 +26,35 @@ pub fn compute_jam_scores_from_scalars(analysis: &mut NewAnalysis) {
 
 // ── Energy Score (0-100) ──────────────────────────────────────────────
 // How "present" and powerful the music feels.
-// Inputs: RMS level, LUFS, spectral centroid mean
+// Calibrated to live tape recordings (quieter than mastered commercial audio).
+// Inputs: RMS level, LUFS, sub-band bass energy, spectral centroid
 fn energy_score(a: &NewAnalysis) -> f64 {
     let rms = a.rms_level.unwrap_or(0.0);
     let lufs = a.lufs_integrated.unwrap_or(-60.0);
+    let bass = a.sub_band_bass_mean.unwrap_or(0.0);
     let centroid = a.spectral_centroid_mean.unwrap_or(0.0);
 
-    // RMS contribution (0-1 range, mapped to 0-40 points)
-    let rms_contrib = (rms * 40.0).min(40.0);
+    // RMS (30 pts): calibrated to live tape range
+    // Library: 0.003-0.31, avg 0.10. Old formula used rms*40 (max ~12/40).
+    let rms_norm = (rms / 0.18).clamp(0.0, 1.0);
+    let rms_contrib = rms_norm * 30.0;
 
-    // LUFS contribution: -60 LUFS = 0 points, -5 LUFS = 40 points
-    let lufs_norm = ((lufs + 60.0) / 55.0).clamp(0.0, 1.0);
-    let lufs_contrib = lufs_norm * 40.0;
+    // LUFS (30 pts): calibrated to library loudness
+    // Library: -68 to -31, avg -41. Old formula used -60..-5 range (max ~21/40).
+    let lufs_norm = ((lufs + 55.0) / 22.0).clamp(0.0, 1.0);
+    let lufs_contrib = lufs_norm * 30.0;
 
-    // Spectral centroid: higher = brighter = more energetic (up to 20 points)
-    let centroid_norm = ((centroid - 500.0) / 4500.0).clamp(0.0, 1.0);
+    // Sub-band bass energy (20 pts): low-frequency power = felt energy
+    // Library: 0.009-0.65, avg 0.10
+    let bass_norm = (bass / 0.15).clamp(0.0, 1.0);
+    let bass_contrib = bass_norm * 20.0;
+
+    // Spectral centroid brightness (20 pts): brighter = more perceived energy
+    // Library: 1917-11067, avg 3808
+    let centroid_norm = ((centroid - 2000.0) / 6000.0).clamp(0.0, 1.0);
     let centroid_contrib = centroid_norm * 20.0;
 
-    (rms_contrib + lufs_contrib + centroid_contrib).clamp(0.0, 100.0)
+    (rms_contrib + lufs_contrib + bass_contrib + centroid_contrib).clamp(0.0, 100.0)
 }
 
 // ── Intensity Score (0-100) ───────────────────────────────────────────
@@ -67,8 +78,8 @@ fn intensity_score(a: &NewAnalysis) -> f64 {
 
 // ── Groove Score (0-100) ──────────────────────────────────────────────
 // How steady and compelling the rhythm is.
-// Uses onset rate, spectral flux consistency, timbral stability, and pattern repetition
-// (replaces tempo_stability/rhythmic_complexity which have near-zero variance).
+// v2: recalibrated for real differentiation. Old formula gave 88.6 avg with 33% at 100.
+// Key change: replaced centroid_std with bass steadiness, tightened all thresholds.
 fn groove_score(a: &NewAnalysis) -> f64 {
     let duration = a.duration.unwrap_or(1.0).max(1.0);
     let onset_count = a.onset_count.unwrap_or(0) as f64;
@@ -80,40 +91,46 @@ fn groove_score(a: &NewAnalysis) -> f64 {
 
     let flux_mean = a.spectral_flux_mean.unwrap_or(0.0);
     let flux_std = a.spectral_flux_std.unwrap_or(0.0);
-    let centroid_std = a.spectral_centroid_std.unwrap_or(1000.0);
+    let bass_mean = a.sub_band_bass_mean.unwrap_or(0.0);
+    let bass_std = a.sub_band_bass_std.unwrap_or(0.0);
     let rep_sim = a.repetition_similarity.unwrap_or(0.85);
 
-    // 1. Onset rate sweet spot (25 pts): 6-10/sec is the groove zone
-    // Library range: 3-12/sec, avg 8.4
+    // 1. Onset rate sweet spot (20 pts): 7-9/sec is the groove zone (tighter than v1's 6-10)
+    // Library: 1.1-13.2/sec, avg 8.3
     let onset_rate = onset_count / duration;
-    let onset_sweet = if onset_rate < 4.0 {
-        onset_rate / 4.0
-    } else if onset_rate <= 6.0 {
-        0.5 + 0.5 * (onset_rate - 4.0) / 2.0
-    } else if onset_rate <= 10.0 {
+    let onset_sweet = if onset_rate < 5.0 {
+        onset_rate / 5.0
+    } else if onset_rate < 7.0 {
+        0.6 + 0.4 * (onset_rate - 5.0) / 2.0
+    } else if onset_rate <= 9.0 {
         1.0
+    } else if onset_rate <= 11.0 {
+        1.0 - 0.4 * (onset_rate - 9.0) / 2.0
     } else {
-        (1.0 - (onset_rate - 10.0) / 4.0).max(0.0)
+        (0.6 - (onset_rate - 11.0) / 5.0).max(0.0)
     };
-    let onset_contrib = onset_sweet.clamp(0.0, 1.0) * 25.0;
+    let onset_contrib = onset_sweet.clamp(0.0, 1.0) * 20.0;
 
-    // 2. Rhythmic consistency (25 pts): low flux coefficient of variation
-    // Low CV = consistent rhythmic energy = locked-in groove
+    // 2. Rhythmic consistency (30 pts): flux CV — strongest differentiator
+    // Library flux_cv: avg 0.706, range 0.05-3.31
+    // v1 used (1-(cv-0.3)/1.2) which was too generous. Now: direct (1-cv).
     let flux_cv = if flux_mean > 0.5 { flux_std / flux_mean } else { 2.0 };
-    let flux_score = (1.0 - (flux_cv - 0.3) / 1.2).clamp(0.0, 1.0);
-    let flux_contrib = flux_score * 25.0;
+    let flux_score = (1.0 - flux_cv).clamp(0.0, 1.0);
+    let flux_contrib = flux_score * 30.0;
 
-    // 3. Timbral consistency (25 pts): low centroid std = locked-in sound
-    // Library range: 388-3414, avg 970
-    let timbre_score = (1.0 - (centroid_std - 400.0) / 2500.0).clamp(0.0, 1.0);
-    let timbre_contrib = timbre_score * 25.0;
+    // 3. Bass steadiness (25 pts): groove lives in the bass
+    // Low bass CV = locked-in bass pattern. Library bass_cv: avg 0.64, range 0.07-1.75
+    let bass_cv = if bass_mean > 0.01 { bass_std / bass_mean } else { 1.5 };
+    let bass_score = (1.0 - bass_cv * 0.7).clamp(0.0, 1.0);
+    let bass_contrib = bass_score * 25.0;
 
     // 4. Pattern repetition (25 pts): groove IS repetition
-    // Library range: 0.80-0.99, avg 0.90
-    let rep_score = ((rep_sim - 0.75) / 0.25).clamp(0.0, 1.0);
+    // Library: avg 0.90, range 0.80-0.999
+    // v1 mapped 0.75-1.0, now 0.85-1.0 — only high repetition scores well
+    let rep_score = ((rep_sim - 0.85) / 0.15).clamp(0.0, 1.0);
     let rep_contrib = rep_score * 25.0;
 
-    (onset_contrib + flux_contrib + timbre_contrib + rep_contrib).clamp(0.0, 100.0)
+    (onset_contrib + flux_contrib + bass_contrib + rep_contrib).clamp(0.0, 100.0)
 }
 
 // ── Improvisation Score (0-100) ───────────────────────────────────────
@@ -487,6 +504,8 @@ mod tests {
         a.peak_energy = Some(0.0);
         a.pitch_stability = Some(0.0);
         a.pitch_confidence_mean = Some(0.0);
+        a.sub_band_bass_mean = Some(0.0);
+        a.sub_band_bass_std = Some(0.0);
 
         assert!(energy_score(&a) < 10.0, "energy={}", energy_score(&a));
         assert!(intensity_score(&a) < 10.0, "intensity={}", intensity_score(&a));
