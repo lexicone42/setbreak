@@ -41,7 +41,8 @@ START_TIME=$SECONDS
 
 # Run analysis — the progress bar goes to stderr (tee captures both)
 # The --verbose flag gives us INFO-level logging of individual track results
-"$SETBREAK" analyze -j "$JOBS" --db-path "$DB_PATH" -v 2>&1
+# --force: re-analyze all tracks to populate v4 features (bandwidth, sub-band, valence/arousal)
+"$SETBREAK" analyze -j "$JOBS" --db-path "$DB_PATH" --force -v 2>&1
 
 EXIT_CODE=$?
 ELAPSED=$(( SECONDS - START_TIME ))
@@ -84,6 +85,10 @@ UNION ALL SELECT
   'exploratory', ROUND(AVG(exploratory_score),1), MIN(exploratory_score), MAX(exploratory_score) FROM analysis_results WHERE exploratory_score IS NOT NULL
 UNION ALL SELECT
   'transcend', ROUND(AVG(transcendence_score),1), MIN(transcendence_score), MAX(transcendence_score) FROM analysis_results WHERE transcendence_score IS NOT NULL
+UNION ALL SELECT
+  'valence', ROUND(AVG(valence_score),1), MIN(valence_score), MAX(valence_score) FROM analysis_results WHERE valence_score IS NOT NULL
+UNION ALL SELECT
+  'arousal', ROUND(AVG(arousal_score),1), MIN(arousal_score), MAX(arousal_score) FROM analysis_results WHERE arousal_score IS NOT NULL
 ;"
 
 echo ""

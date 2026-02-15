@@ -2,6 +2,7 @@ pub mod analyzer;
 pub mod config;
 pub mod db;
 pub mod scanner;
+pub mod setlist;
 
 /// Audio file extensions we support
 pub const SUPPORTED_EXTENSIONS: &[&str] = &["mp3", "flac", "ogg", "shn", "wav"];

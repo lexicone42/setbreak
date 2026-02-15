@@ -45,6 +45,9 @@ regex = "1"
 # XDG paths
 directories = "6"
 
+# HTTP (for archive.org metadata lookups)
+ureq = { version = "3", features = ["json"] }
+
 # Logging
 log = "0.4"
 env_logger = "0.11"

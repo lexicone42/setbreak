@@ -464,6 +464,31 @@ impl Database {
         })
     }
 
+    /// Get tracks missing titles (no parsed_title AND no tag title).
+    /// Returns (track_id, file_path) pairs.
+    pub fn get_tracks_missing_titles(&self) -> Result<Vec<(i64, String)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, file_path FROM tracks
+             WHERE parsed_title IS NULL AND title IS NULL
+             ORDER BY file_path",
+        )?;
+
+        let rows = stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+
+        Ok(rows)
+    }
+
+    /// Update parsed_title for a single track.
+    pub fn update_parsed_title(&self, track_id: i64, title: &str) -> Result<()> {
+        self.conn.execute(
+            "UPDATE tracks SET parsed_title = ?1, updated_at = datetime('now') WHERE id = ?2",
+            params![title, track_id],
+        )?;
+        Ok(())
+    }
+
     /// Check if a file path already exists and hasn't changed (same size+mtime).
     pub fn track_unchanged(&self, file_path: &str, file_size: i64, file_modified: &str) -> Result<bool> {
         let result: std::result::Result<(i64, String), _> = self.conn.query_row(

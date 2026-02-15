@@ -45,6 +45,13 @@ enum Commands {
         filter: Option<String>,
     },
 
+    /// Look up song titles from archive.org metadata
+    Setlist {
+        /// Dry run — show what would be updated without writing to DB
+        #[arg(long)]
+        dry_run: bool,
+    },
+
     /// Show library statistics
     Stats,
 }
@@ -91,6 +98,22 @@ fn main() -> Result<()> {
                 "Analysis complete: {} analyzed, {} failed",
                 result.analyzed, result.failed
             );
+        }
+
+        Commands::Setlist { dry_run } => {
+            if dry_run {
+                println!("DRY RUN — no changes will be written to the database");
+            }
+            let result = setbreak::setlist::lookup_setlists(&db, dry_run)
+                .context("Setlist lookup failed")?;
+            println!();
+            println!(
+                "Setlist lookup complete: {} dirs fetched, {} titles updated, {} errors",
+                result.directories_fetched, result.titles_updated, result.fetch_errors
+            );
+            if dry_run && result.titles_updated > 0 {
+                println!("(dry run — re-run without --dry-run to write changes)");
+            }
         }
 
         Commands::Stats => {
