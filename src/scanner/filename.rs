@@ -31,6 +31,7 @@ fn expand_band_code(code: &str) -> Option<&'static str> {
         "dso" => Some("Dark Star Orchestra"),
         "lsz" | "led" => Some("Led Zeppelin"),
         "goose" => Some("Goose"),
+        "bts" => Some("Built to Spill"),
         "billy" | "bs" | "bsco" => Some("Billy Strings"),
         "kg" | "kglw" => Some("King Gizzard & the Lizard Wizard"),
         "trey" | "tab" => Some("Trey Anastasio Band"),
@@ -223,7 +224,7 @@ pub fn parse_path(path: &Path) -> ParsedPath {
                 "umphrey's mcgee", "disco biscuits", "moe.", "string cheese incident",
                 "dark star orchestra", "trey anastasio band", "lotus", "ween",
                 "gov't mule", "allman brothers band", "joe russo's almost dead",
-                "king gizzard", "medeski martin",
+                "king gizzard", "medeski martin", "built to spill",
             ];
             for band in &known_bands {
                 if lower == *band || lower.starts_with(band) {
@@ -310,6 +311,7 @@ fn titlecase_band(s: &str) -> String {
         "gov't mule" => "Gov't Mule".to_string(),
         "allman brothers band" => "Allman Brothers Band".to_string(),
         "joe russo's almost dead" => "Joe Russo's Almost Dead".to_string(),
+        "built to spill" => "Built to Spill".to_string(),
         _ => s.to_string(),
     }
 }
