@@ -8,7 +8,8 @@ set -euo pipefail
 
 SETBREAK="./target/release/setbreak"
 DB_PATH="$HOME/.local/share/setbreak/setbreak.db"
-LOG_DIR="/datar/workspace/claude_code_experiments/setbreak/logs"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+LOG_DIR="$SCRIPT_DIR/logs"
 JOBS=4  # 4 of 6 cores
 
 mkdir -p "$LOG_DIR"

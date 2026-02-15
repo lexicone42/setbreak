@@ -19,7 +19,8 @@ else
 fi
 
 # Recent log tail
-LOG=$(ls -t /datar/workspace/claude_code_experiments/setbreak/logs/analyze_*.log 2>/dev/null | head -1)
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+LOG=$(ls -t "$SCRIPT_DIR"/logs/analyze_*.log 2>/dev/null | head -1)
 if [ -n "$LOG" ]; then
     echo ""
     echo "Recent log ($LOG):"

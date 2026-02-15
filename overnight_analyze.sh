@@ -7,7 +7,8 @@ set -euo pipefail
 
 SETBREAK="./target/release/setbreak"
 DB_PATH="$HOME/.local/share/setbreak/setbreak.db"
-LOG_DIR="/datar/workspace/claude_code_experiments/setbreak/logs"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+LOG_DIR="$SCRIPT_DIR/logs"
 JOBS=3  # 3 of 6 cores — leaving room for the system
 MAX_HOURS=8
 
