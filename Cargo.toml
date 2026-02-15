@@ -5,6 +5,9 @@ edition = "2024"
 rust-version = "1.85"
 description = "Jam-band music library analyzer — scan, analyze, and explore live music"
 license = "Apache-2.0"
+repository = "https://github.com/lexicone42/setbreak"
+keywords = ["music", "audio-analysis", "jam-band", "grateful-dead", "dsp"]
+categories = ["multimedia::audio", "command-line-utilities"]
 
 [dependencies]
 # Audio analysis (fork of willibrandon/ferrous-waves with setbreak optimizations)
