@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
 description = "Jam-band music library analyzer — scan, analyze, and explore live music"
-license = "MIT OR Apache-2.0"
+license = "Apache-2.0"
 
 [dependencies]
 # Audio analysis (fork of willibrandon/ferrous-waves with setbreak optimizations)
