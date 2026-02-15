@@ -66,7 +66,7 @@ Requires Rust 1.85+ (2024 edition) and `ffmpeg` (for SHN file decoding).
 cargo build --release
 ```
 
-The [ferrous-waves](https://github.com/willibrandon/ferrous-waves) dependency provides the DSP engine and is expected at `../ferrous-waves` as a local path dependency.
+The DSP engine is a [fork of ferrous-waves](https://github.com/lexicone42/ferrous-waves) (originally by [willibrandon](https://github.com/willibrandon/ferrous-waves)) with optimizations for batch analysis — duplicate STFT elimination and configurable feature skipping. It's pulled automatically as a git dependency.
 
 ## Architecture
 
