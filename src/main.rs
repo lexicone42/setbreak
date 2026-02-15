@@ -142,6 +142,27 @@ enum Commands {
         date: String,
     },
 
+    /// Compute track-to-track similarity from audio features
+    Similarity {
+        /// Number of parallel workers
+        #[arg(short = 'j', long, default_value = "4")]
+        jobs: usize,
+    },
+
+    /// Find tracks that sound similar to a given track
+    Similar {
+        /// Song title to search for (substring match)
+        song: String,
+
+        /// Show date to narrow the search (YYYY-MM-DD)
+        #[arg(short, long)]
+        date: Option<String>,
+
+        /// Number of results
+        #[arg(short = 'n', long, default_value = "15")]
+        limit: usize,
+    },
+
     /// Show library statistics
     Stats,
 }
@@ -258,6 +279,72 @@ fn main() -> Result<()> {
             println!("Show: {}", date);
             println!();
             print_score_table(&results, None);
+        }
+
+        Commands::Similarity { jobs } => {
+            let result = setbreak::similarity::compute_similarity(&db, jobs)
+                .context("Similarity computation failed")?;
+            println!(
+                "Similarity complete: {} tracks processed, {} pairs stored",
+                result.tracks_processed, result.pairs_stored
+            );
+        }
+
+        Commands::Similar { song, date, limit } => {
+            let found = db.find_track_id(&song, date.as_deref())
+                .context("Search failed")?;
+
+            let (track_id, title, track_date) = match found {
+                Some(t) => t,
+                None => {
+                    println!("No analyzed track matching \"{}\".", song);
+                    return Ok(());
+                }
+            };
+
+            let results = db.query_similar(track_id, limit)
+                .context("Query failed")?;
+
+            if results.is_empty() {
+                println!("No similarity data. Run `setbreak similarity` first.");
+                return Ok(());
+            }
+
+            println!("Tracks similar to \"{}\" ({}):", title, track_date);
+            println!();
+
+            // Print with distance column
+            println!(
+                "{:<25} {:>10} {:>5} {:>6}  {:>4} {:>4} {:>4} {:>4} {:>4} {:>4}",
+                "Song", "Date", "Min", "Dist",
+                "Grv", "Imp", "Eng", "Int", "Bld", "Exp"
+            );
+            println!("{}", "-".repeat(95));
+
+            for (t, dist) in &results {
+                let title_display: String = if t.title.len() > 25 {
+                    format!("{}...", &t.title[..22])
+                } else {
+                    t.title.clone()
+                };
+
+                println!(
+                    "{:<25} {:>10} {:>5.1} {:>6.3}  {:>4.0} {:>4.0} {:>4.0} {:>4.0} {:>4.0} {:>4.0}",
+                    title_display,
+                    t.date,
+                    t.duration_min,
+                    dist,
+                    t.groove,
+                    t.improvisation,
+                    t.energy,
+                    t.intensity,
+                    t.build_quality,
+                    t.exploratory,
+                );
+            }
+
+            println!();
+            println!("Dist = cosine distance (0 = identical, lower = more similar)");
         }
 
         Commands::Stats => {

@@ -64,8 +64,11 @@ impl Database {
         if version < 4 {
             self.migrate_v4()?;
         }
+        if version < 5 {
+            self.migrate_v5()?;
+        }
 
-        self.conn.pragma_update(None, "user_version", 4)?;
+        self.conn.pragma_update(None, "user_version", 5)?;
         Ok(())
     }
 
@@ -393,6 +396,24 @@ impl Database {
             }
         }
 
+        Ok(())
+    }
+
+    /// V5: Track similarity table for nearest-neighbor queries
+    fn migrate_v5(&self) -> Result<()> {
+        self.conn.execute_batch(
+            "
+            CREATE TABLE IF NOT EXISTS track_similarity (
+                track_id         INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+                similar_track_id INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+                distance         REAL NOT NULL,
+                rank             INTEGER NOT NULL,
+                PRIMARY KEY (track_id, similar_track_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_similarity_track ON track_similarity(track_id, rank);
+            CREATE INDEX IF NOT EXISTS idx_similarity_similar ON track_similarity(similar_track_id);
+            ",
+        )?;
         Ok(())
     }
 }

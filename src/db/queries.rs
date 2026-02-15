@@ -726,6 +726,165 @@ impl Database {
         Ok(rows)
     }
 
+    /// Load feature vectors for similarity computation.
+    /// Returns (track_id, feature_vector) pairs for all analyzed tracks.
+    pub fn get_feature_vectors(&self) -> Result<Vec<(i64, Vec<f64>)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT track_id,
+                -- MFCCs (26 dims)
+                COALESCE(mfcc_0_mean, 0), COALESCE(mfcc_0_std, 0),
+                COALESCE(mfcc_1_mean, 0), COALESCE(mfcc_1_std, 0),
+                COALESCE(mfcc_2_mean, 0), COALESCE(mfcc_2_std, 0),
+                COALESCE(mfcc_3_mean, 0), COALESCE(mfcc_3_std, 0),
+                COALESCE(mfcc_4_mean, 0), COALESCE(mfcc_4_std, 0),
+                COALESCE(mfcc_5_mean, 0), COALESCE(mfcc_5_std, 0),
+                COALESCE(mfcc_6_mean, 0), COALESCE(mfcc_6_std, 0),
+                COALESCE(mfcc_7_mean, 0), COALESCE(mfcc_7_std, 0),
+                COALESCE(mfcc_8_mean, 0), COALESCE(mfcc_8_std, 0),
+                COALESCE(mfcc_9_mean, 0), COALESCE(mfcc_9_std, 0),
+                COALESCE(mfcc_10_mean, 0), COALESCE(mfcc_10_std, 0),
+                COALESCE(mfcc_11_mean, 0), COALESCE(mfcc_11_std, 0),
+                COALESCE(mfcc_12_mean, 0), COALESCE(mfcc_12_std, 0),
+                -- Spectral (10 dims)
+                COALESCE(spectral_centroid_mean, 0), COALESCE(spectral_centroid_std, 0),
+                COALESCE(spectral_flux_mean, 0), COALESCE(spectral_flux_std, 0),
+                COALESCE(spectral_flatness_mean, 0), COALESCE(spectral_flatness_std, 0),
+                COALESCE(spectral_bandwidth_mean, 0), COALESCE(spectral_bandwidth_std, 0),
+                COALESCE(spectral_rolloff_mean, 0), COALESCE(spectral_rolloff_std, 0),
+                -- Sub-band energy (8 dims)
+                COALESCE(sub_band_bass_mean, 0), COALESCE(sub_band_bass_std, 0),
+                COALESCE(sub_band_mid_mean, 0), COALESCE(sub_band_mid_std, 0),
+                COALESCE(sub_band_high_mean, 0), COALESCE(sub_band_high_std, 0),
+                COALESCE(sub_band_presence_mean, 0), COALESCE(sub_band_presence_std, 0),
+                -- ZCR (2 dims)
+                COALESCE(zcr_mean, 0), COALESCE(zcr_std, 0),
+                -- Tempo (1 dim)
+                COALESCE(tempo_bpm, 0)
+             FROM analysis_results"
+        )?;
+
+        let dim = 47; // 26 + 10 + 8 + 2 + 1
+        let rows = stmt
+            .query_map([], |row| {
+                let track_id: i64 = row.get(0)?;
+                let mut vec = Vec::with_capacity(dim);
+                for i in 1..=dim {
+                    vec.push(row.get::<_, f64>(i)?);
+                }
+                Ok((track_id, vec))
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    /// Store similarity results (bulk insert within a transaction).
+    pub fn store_similarities(&self, similarities: &[(i64, i64, f64, i32)]) -> Result<()> {
+        let tx = self.conn.unchecked_transaction()?;
+        tx.execute("DELETE FROM track_similarity", [])?;
+
+        let mut stmt = tx.prepare_cached(
+            "INSERT INTO track_similarity (track_id, similar_track_id, distance, rank)
+             VALUES (?1, ?2, ?3, ?4)"
+        )?;
+
+        for &(track_id, similar_id, distance, rank) in similarities {
+            stmt.execute(params![track_id, similar_id, distance, rank])?;
+        }
+        drop(stmt);
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Query similar tracks for a given track.
+    pub fn query_similar(&self, track_id: i64, limit: usize) -> Result<Vec<(TrackScore, f64)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT
+                COALESCE(t.parsed_title, t.title, '(untitled)'),
+                COALESCE(t.parsed_date, t.date, '?'),
+                COALESCE(a.duration, 0.0) / 60.0,
+                a.estimated_key, a.tempo_bpm,
+                COALESCE(a.energy_score, 0), COALESCE(a.intensity_score, 0),
+                COALESCE(a.groove_score, 0), COALESCE(a.improvisation_score, 0),
+                COALESCE(a.tightness_score, 0), COALESCE(a.build_quality_score, 0),
+                COALESCE(a.exploratory_score, 0), COALESCE(a.transcendence_score, 0),
+                COALESCE(a.valence_score, 0), COALESCE(a.arousal_score, 0),
+                s.distance
+             FROM track_similarity s
+             JOIN tracks t ON t.id = s.similar_track_id
+             JOIN analysis_results a ON a.track_id = s.similar_track_id
+             WHERE s.track_id = ?1
+             ORDER BY s.rank
+             LIMIT ?2"
+        )?;
+
+        let rows = stmt
+            .query_map(params![track_id, limit as i64], |row| {
+                Ok((
+                    TrackScore {
+                        title: row.get(0)?,
+                        date: row.get(1)?,
+                        duration_min: row.get(2)?,
+                        key: row.get(3)?,
+                        tempo: row.get(4)?,
+                        energy: row.get(5)?,
+                        intensity: row.get(6)?,
+                        groove: row.get(7)?,
+                        improvisation: row.get(8)?,
+                        tightness: row.get(9)?,
+                        build_quality: row.get(10)?,
+                        exploratory: row.get(11)?,
+                        transcendence: row.get(12)?,
+                        valence: row.get(13)?,
+                        arousal: row.get(14)?,
+                    },
+                    row.get::<_, f64>(15)?,
+                ))
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    /// Find a track ID by song title and optional date.
+    pub fn find_track_id(&self, song: &str, date: Option<&str>) -> Result<Option<(i64, String, String)>> {
+        let (sql, pattern) = if let Some(_d) = date {
+            (
+                "SELECT t.id, COALESCE(t.parsed_title, t.title, '?'), COALESCE(t.parsed_date, t.date, '?')
+                 FROM tracks t
+                 JOIN analysis_results a ON a.track_id = t.id
+                 WHERE (t.parsed_title LIKE ?1 OR t.title LIKE ?1)
+                   AND (t.parsed_date = ?2 OR t.date = ?2)
+                 LIMIT 1",
+                format!("%{song}%"),
+            )
+        } else {
+            (
+                "SELECT t.id, COALESCE(t.parsed_title, t.title, '?'), COALESCE(t.parsed_date, t.date, '?')
+                 FROM tracks t
+                 JOIN analysis_results a ON a.track_id = t.id
+                 WHERE (t.parsed_title LIKE ?1 OR t.title LIKE ?1)
+                 ORDER BY a.duration DESC
+                 LIMIT 1",
+                format!("%{song}%"),
+            )
+        };
+
+        let result = if date.is_some() {
+            self.conn.query_row(sql, params![pattern, date.unwrap()], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            })
+        } else {
+            self.conn.query_row(sql, params![pattern], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            })
+        };
+
+        match result {
+            Ok(row) => Ok(Some(row)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e.into()),
+        }
+    }
+
     /// Get library statistics.
     pub fn stats(&self) -> Result<LibraryStats> {
         let total_tracks: i64 = self.conn.query_row(
