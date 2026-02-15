@@ -67,8 +67,11 @@ impl Database {
         if version < 5 {
             self.migrate_v5()?;
         }
+        if version < 6 {
+            self.migrate_v6()?;
+        }
 
-        self.conn.pragma_update(None, "user_version", 5)?;
+        self.conn.pragma_update(None, "user_version", 6)?;
         Ok(())
     }
 
@@ -412,6 +415,26 @@ impl Database {
             );
             CREATE INDEX IF NOT EXISTS idx_similarity_track ON track_similarity(track_id, rank);
             CREATE INDEX IF NOT EXISTS idx_similarity_similar ON track_similarity(similar_track_id);
+            ",
+        )?;
+        Ok(())
+    }
+
+    /// V6: Archive.org show cache for collection discovery
+    fn migrate_v6(&self) -> Result<()> {
+        self.conn.execute_batch(
+            "
+            CREATE TABLE IF NOT EXISTS archive_shows (
+                identifier      TEXT PRIMARY KEY,
+                collection      TEXT NOT NULL,
+                date            TEXT NOT NULL,
+                title           TEXT NOT NULL DEFAULT '',
+                source_quality  INTEGER NOT NULL DEFAULT 0,
+                format_quality  INTEGER NOT NULL DEFAULT 0,
+                fetched_at      TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE INDEX IF NOT EXISTS idx_archive_collection ON archive_shows(collection);
+            CREATE INDEX IF NOT EXISTS idx_archive_date ON archive_shows(date);
             ",
         )?;
         Ok(())

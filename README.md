@@ -31,6 +31,22 @@ setbreak setlist --dry-run
 # Setlist lookup complete: 255 dirs fetched, 4688 titles updated, 5 errors
 ```
 
+**Find segue chains** — multi-song jam suites connected by `->` markers, ranked by jam scores:
+
+```
+setbreak chains --sort transcendence -n 10
+# Dark Star -> St. Stephen -> The Eleven     1969-02-27   3  44.5    82   63   71   79
+# Help > Slip > Franklin's                   1977-05-08   3  32.1    78   58   65   72
+```
+
+**Discover missing shows** from archive.org, comparing your local library against the full collection:
+
+```
+setbreak discover --band gd --year 1977
+# Collection: GratefulDead (7700 total shows in archive)
+# Local shows: 42 dates | Missing: 38 dates
+```
+
 **Rescore** all tracks when scoring formulas evolve, without re-analyzing audio:
 
 ```
@@ -85,14 +101,17 @@ src/
     features.rs        Feature extraction from AnalysisResult
     jam_metrics.rs     Score computation (10 scores, ~300 lines)
   db/
-    mod.rs             SQLite setup + versioned migrations (v1-v4)
+    mod.rs             SQLite setup + versioned migrations (v1-v6)
     models.rs          Structs for DB rows
     queries.rs         All SQL (insert, update, query)
   setlist/
     mod.rs             archive.org metadata lookups
+  chains.rs            Segue chain detection (multi-song jam suites)
+  discovery.rs         archive.org collection discovery (missing shows)
+  similarity.rs        Track similarity (cosine distance on feature vectors)
 ```
 
-**Storage**: SQLite with WAL mode, 6 tables, 80+ feature columns, 4 relational detail tables (chords, segments, tension points, transitions).
+**Storage**: SQLite with WAL mode, 8 tables, 100+ feature columns, 4 relational detail tables (chords, segments, tension points, transitions), plus similarity and archive show caches.
 
 **Processing**: Rayon thread pool for parallelism, thread-local tokio runtimes for the async analysis engine, chunked processing for crash recovery.
 

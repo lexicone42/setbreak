@@ -21,7 +21,9 @@ struct ArchiveMetadata {
 struct ArchiveFile {
     name: Option<String>,
     title: Option<String>,
-    /// Some entries use "track" field for ordering
+    /// Some entries use "track" field for ordering.
+    /// Deserialized from JSON but not yet used in matching logic.
+    #[allow(dead_code)]
     track: Option<String>,
 }
 

@@ -226,7 +226,7 @@ pub struct TransitionRecord {
 }
 
 /// A track with its jam scores (for query display).
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TrackScore {
     pub title: String,
     pub date: String,
@@ -243,6 +243,99 @@ pub struct TrackScore {
     pub transcendence: f64,
     pub valence: f64,
     pub arousal: f64,
+}
+
+/// A chain of consecutive tracks connected by segue markers (->).
+#[derive(Debug, Clone)]
+pub struct ChainScore {
+    pub date: String,
+    pub songs: Vec<String>,
+    pub chain_length: usize,
+    pub duration_min: f64,
+    pub energy: f64,
+    pub intensity: f64,
+    pub groove: f64,
+    pub improvisation: f64,
+    pub tightness: f64,
+    pub build_quality: f64,
+    pub exploratory: f64,
+    pub transcendence: f64,
+    pub valence: f64,
+    pub arousal: f64,
+}
+
+impl ChainScore {
+    /// Build a ChainScore from a slice of consecutive segued tracks.
+    /// Scores are duration-weighted averages (longer jams contribute more).
+    pub fn from_tracks(tracks: &[TrackScore]) -> Self {
+        let total_dur: f64 = tracks.iter().map(|t| t.duration_min).sum();
+        let safe_dur = if total_dur > 0.0 { total_dur } else { 1.0 };
+
+        let wavg = |f: fn(&TrackScore) -> f64| -> f64 {
+            tracks.iter().map(|t| f(t) * t.duration_min).sum::<f64>() / safe_dur
+        };
+
+        // Strip segue markers from song titles for display
+        let songs: Vec<String> = tracks
+            .iter()
+            .map(|t| strip_segue_marker(&t.title))
+            .collect();
+
+        Self {
+            date: tracks[0].date.clone(),
+            songs,
+            chain_length: tracks.len(),
+            duration_min: total_dur,
+            energy: wavg(|t| t.energy),
+            intensity: wavg(|t| t.intensity),
+            groove: wavg(|t| t.groove),
+            improvisation: wavg(|t| t.improvisation),
+            tightness: wavg(|t| t.tightness),
+            build_quality: wavg(|t| t.build_quality),
+            exploratory: wavg(|t| t.exploratory),
+            transcendence: wavg(|t| t.transcendence),
+            valence: wavg(|t| t.valence),
+            arousal: wavg(|t| t.arousal),
+        }
+    }
+
+    /// Human-readable chain title: "Dark Star -> St. Stephen -> The Eleven"
+    pub fn chain_title(&self) -> String {
+        self.songs.join(" -> ")
+    }
+}
+
+/// Strip trailing segue markers from a song title.
+fn strip_segue_marker(title: &str) -> String {
+    let t = title.trim_end();
+    for marker in &[" -->", "-->", " ->", "->", " >"] {
+        if let Some(stripped) = t.strip_suffix(marker) {
+            return stripped.trim_end().to_string();
+        }
+    }
+    t.to_string()
+}
+
+/// An archive.org show entry (cached in DB).
+#[derive(Debug, Clone)]
+pub struct ArchiveShow {
+    pub identifier: String,
+    pub collection: String,
+    pub date: String,
+    pub title: String,
+    pub source_quality: i32, // sbd=3, matrix=2, aud=1
+    pub format_quality: i32, // flac=3, shn=2, mp3=1
+}
+
+/// A missing show with best available tape info.
+#[derive(Debug, Clone)]
+pub struct MissingShow {
+    pub date: String,
+    pub best_identifier: String,
+    pub title: String,
+    pub source_quality: i32,
+    pub format_quality: i32,
+    pub tape_count: usize,
 }
 
 /// Library statistics.

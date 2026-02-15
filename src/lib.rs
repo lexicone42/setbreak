@@ -1,6 +1,8 @@
 pub mod analyzer;
+pub mod chains;
 pub mod config;
 pub mod db;
+pub mod discovery;
 pub mod scanner;
 pub mod setlist;
 pub mod similarity;

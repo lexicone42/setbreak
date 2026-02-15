@@ -1,6 +1,6 @@
 use super::models::{
-    ChordEvent, LibraryStats, NewAnalysis, NewTrack, SegmentRecord, TensionPointRecord, Track,
-    TrackScore, TransitionRecord,
+    ArchiveShow, ChordEvent, LibraryStats, NewAnalysis, NewTrack, SegmentRecord,
+    TensionPointRecord, Track, TrackScore, TransitionRecord,
 };
 use super::{Database, Result};
 use rusqlite::params;
@@ -955,6 +955,146 @@ impl Database {
             params![title, track_id],
         )?;
         Ok(())
+    }
+
+    /// Get all distinct dates that have tracks with segue markers (for chain detection).
+    /// Only returns dates that also have analysis data.
+    pub fn get_dates_with_chains(&self) -> Result<Vec<String>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT DISTINCT t.parsed_date
+             FROM tracks t
+             JOIN analysis_results a ON a.track_id = t.id
+             WHERE t.parsed_date IS NOT NULL
+               AND (t.parsed_title LIKE '%->%'
+                    OR t.parsed_title LIKE '%--%>'
+                    OR t.parsed_title LIKE '% >')
+             ORDER BY t.parsed_date"
+        )?;
+
+        let dates = stmt
+            .query_map([], |row| row.get(0))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(dates)
+    }
+
+    /// Get all distinct dates that have tracks with segue markers for a specific date.
+    /// (Used when --date is specified on the CLI.)
+    pub fn date_has_analysis(&self, date: &str) -> Result<bool> {
+        let count: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM tracks t
+             JOIN analysis_results a ON a.track_id = t.id
+             WHERE t.parsed_date = ?1 OR t.date = ?1",
+            params![date],
+            |row| row.get(0),
+        )?;
+        Ok(count > 0)
+    }
+
+    /// Store archive.org show entries (bulk insert within a transaction).
+    /// Returns the total number of rows in the table for this collection after storing.
+    pub fn store_archive_shows(&self, shows: &[ArchiveShow]) -> Result<usize> {
+        let tx = self.conn.unchecked_transaction()?;
+
+        let mut stmt = tx.prepare_cached(
+            "INSERT OR REPLACE INTO archive_shows
+                (identifier, collection, date, title, source_quality, format_quality, fetched_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, datetime('now'))"
+        )?;
+
+        for s in shows {
+            stmt.execute(params![
+                s.identifier, s.collection, s.date, s.title,
+                s.source_quality, s.format_quality,
+            ])?;
+        }
+        drop(stmt);
+        tx.commit()?;
+
+        // Return actual row count (deduplicated by primary key)
+        let collection = match shows.first() {
+            Some(s) => s.collection.as_str(),
+            None => return Ok(0),
+        };
+        let count: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM archive_shows WHERE collection = ?1",
+            params![collection],
+            |row| row.get(0),
+        )?;
+        Ok(count as usize)
+    }
+
+    /// Get cached archive shows for a collection, returning None if cache is expired.
+    pub fn get_cached_archive_shows(
+        &self,
+        collection: &str,
+        ttl_days: i64,
+    ) -> Result<Option<Vec<ArchiveShow>>> {
+        // Check if we have any data and if it's fresh enough
+        let freshness: std::result::Result<String, _> = self.conn.query_row(
+            "SELECT MIN(fetched_at) FROM archive_shows WHERE collection = ?1",
+            params![collection],
+            |row| row.get(0),
+        );
+
+        match freshness {
+            Ok(oldest) => {
+                // Check if oldest fetch is within TTL
+                let expired: bool = self.conn.query_row(
+                    "SELECT datetime(?1) < datetime('now', ?2)",
+                    params![oldest, format!("-{ttl_days} days")],
+                    |row| row.get(0),
+                )?;
+
+                if expired {
+                    return Ok(None);
+                }
+            }
+            Err(rusqlite::Error::InvalidColumnType(_, _, _)) => {
+                // No rows — cache miss
+                return Ok(None);
+            }
+            Err(e) => return Err(e.into()),
+        }
+
+        let mut stmt = self.conn.prepare(
+            "SELECT identifier, collection, date, title, source_quality, format_quality
+             FROM archive_shows
+             WHERE collection = ?1
+             ORDER BY date"
+        )?;
+
+        let shows = stmt
+            .query_map(params![collection], |row| {
+                Ok(ArchiveShow {
+                    identifier: row.get(0)?,
+                    collection: row.get(1)?,
+                    date: row.get(2)?,
+                    title: row.get(3)?,
+                    source_quality: row.get(4)?,
+                    format_quality: row.get(5)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+
+        if shows.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(shows))
+        }
+    }
+
+    /// Get distinct local show dates for a given band.
+    pub fn get_local_show_dates(&self, band: &str) -> Result<Vec<String>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT DISTINCT parsed_date FROM tracks
+             WHERE parsed_band = ?1 AND parsed_date IS NOT NULL
+             ORDER BY parsed_date"
+        )?;
+
+        let dates = stmt
+            .query_map(params![band], |row| row.get(0))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(dates)
     }
 
     /// Check if a file path already exists and hasn't changed (same size+mtime).

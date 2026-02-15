@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
-use setbreak::db::models::TrackScore;
+use setbreak::db::models::{ChainScore, TrackScore};
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -160,6 +160,52 @@ enum Commands {
 
         /// Number of results
         #[arg(short = 'n', long, default_value = "15")]
+        limit: usize,
+    },
+
+    /// Find and rank segue chains (multi-song jam suites connected by ->)
+    Chains {
+        /// Sort by this score
+        #[arg(short, long, value_enum, default_value = "transcendence")]
+        sort: ScoreName,
+
+        /// Filter to a specific show date (YYYY-MM-DD)
+        #[arg(short, long)]
+        date: Option<String>,
+
+        /// Minimum chain length (number of songs)
+        #[arg(long, default_value = "2")]
+        min_length: usize,
+
+        /// Minimum total chain duration in minutes
+        #[arg(long)]
+        min_duration: Option<f64>,
+
+        /// Filter chains containing this song (substring match)
+        #[arg(long)]
+        song: Option<String>,
+
+        /// Number of results
+        #[arg(short = 'n', long, default_value = "20")]
+        limit: usize,
+    },
+
+    /// Discover missing shows from archive.org collections
+    Discover {
+        /// Band code (gd, phish, bts)
+        #[arg(long, default_value = "gd")]
+        band: String,
+
+        /// Force refresh of cached archive.org data
+        #[arg(long)]
+        refresh: bool,
+
+        /// Filter by year or year range (e.g., "1977" or "1977-1980")
+        #[arg(long)]
+        year: Option<String>,
+
+        /// Number of results
+        #[arg(short = 'n', long, default_value = "50")]
         limit: usize,
     },
 
@@ -347,6 +393,74 @@ fn main() -> Result<()> {
             println!("Dist = cosine distance (0 = identical, lower = more similar)");
         }
 
+        Commands::Chains { sort, date, min_length, min_duration, song, limit } => {
+            let dates = if let Some(ref d) = date {
+                if db.date_has_analysis(d).context("Query failed")? {
+                    vec![d.clone()]
+                } else {
+                    println!("No analyzed tracks for date {}.", d);
+                    return Ok(());
+                }
+            } else {
+                db.get_dates_with_chains().context("Query failed")?
+            };
+
+            if dates.is_empty() {
+                println!("No segue chains found in analyzed tracks.");
+                return Ok(());
+            }
+
+            // Collect chains from all dates
+            let mut all_chains = Vec::new();
+            for d in &dates {
+                let tracks = db.query_show(d).context("Query failed")?;
+                let chains = setbreak::chains::detect_chains(&tracks, min_length);
+                all_chains.extend(chains);
+            }
+
+            let chains = setbreak::chains::filter_and_sort_chains(
+                all_chains,
+                min_duration,
+                song.as_deref(),
+                sort.column(),
+                limit,
+            );
+
+            if chains.is_empty() {
+                println!("No chains match the given criteria.");
+                return Ok(());
+            }
+
+            println!("Top {} segue chains (sorted by {}):", chains.len(), sort.label());
+            println!();
+            print_chain_table(&chains, &sort);
+        }
+
+        Commands::Discover { band, refresh, year, limit } => {
+            let result = setbreak::discovery::discover_missing_shows(
+                &db, &band, refresh, year.as_deref(), limit,
+            ).context("Discovery failed")?;
+
+            println!(
+                "Collection: {} ({} total shows in archive)",
+                result.collection, result.archive_count
+            );
+            println!(
+                "Local shows: {} dates | Missing: {} dates",
+                result.local_count, result.missing.len()
+            );
+            println!();
+
+            if result.missing.is_empty() {
+                println!("You have every show! (or no missing shows match the filter)");
+            } else {
+                print_missing_shows(&result.missing);
+                println!();
+                println!("Download with: ia download <identifier>");
+                println!("  (install: pip install internetarchive)");
+            }
+        }
+
         Commands::Stats => {
             let stats = db.stats().context("Failed to get stats")?;
             println!("Library Statistics");
@@ -420,5 +534,69 @@ fn print_score_table(tracks: &[TrackScore], highlight: Option<&ScoreName>) {
 
     if let Some(hl) = highlight {
         println!("Sorted by: {}", hl.label());
+    }
+}
+
+/// Print a table of segue chains.
+fn print_chain_table(chains: &[ChainScore], sort: &ScoreName) {
+    println!(
+        "{:<40} {:>10} {:>3} {:>5}  {:>4} {:>4} {:>4} {:>4}",
+        "Chain", "Date", "Len", "Min",
+        "Trn", "Imp", "Eng", "Exp"
+    );
+    println!("{}", "-".repeat(85));
+
+    for c in chains {
+        let chain_title = c.chain_title();
+        let title_display: String = if chain_title.len() > 40 {
+            format!("{}...", &chain_title[..37])
+        } else {
+            chain_title
+        };
+
+        println!(
+            "{:<40} {:>10} {:>3} {:>5.1}  {:>4.0} {:>4.0} {:>4.0} {:>4.0}",
+            title_display,
+            c.date,
+            c.chain_length,
+            c.duration_min,
+            c.transcendence,
+            c.improvisation,
+            c.energy,
+            c.exploratory,
+        );
+    }
+
+    println!();
+    println!("Trn=Transcendence  Imp=Improvisation  Eng=Energy  Exp=Exploratory");
+    println!("Sorted by: {}", sort.label());
+}
+
+/// Print a table of missing shows from archive.org.
+fn print_missing_shows(shows: &[setbreak::db::models::MissingShow]) {
+    println!(
+        "{:<12} {:>6} {:>6} {:>5}  {}",
+        "Date", "Source", "Format", "Tapes", "Identifier"
+    );
+    println!("{}", "-".repeat(80));
+
+    for s in shows {
+        let source = match s.source_quality {
+            3 => "SBD",
+            2 => "Matrix",
+            1 => "AUD",
+            _ => "?",
+        };
+        let format = match s.format_quality {
+            3 => "FLAC",
+            2 => "SHN",
+            1 => "MP3",
+            _ => "?",
+        };
+
+        println!(
+            "{:<12} {:>6} {:>6} {:>5}  {}",
+            s.date, source, format, s.tape_count, s.best_identifier
+        );
     }
 }
