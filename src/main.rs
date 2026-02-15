@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
+use setbreak::db::models::TrackScore;
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -15,6 +16,53 @@ struct Cli {
 
     #[command(subcommand)]
     command: Commands,
+}
+
+#[derive(Clone, ValueEnum)]
+enum ScoreName {
+    Energy,
+    Intensity,
+    Groove,
+    Improvisation,
+    Tightness,
+    #[value(alias = "build")]
+    BuildQuality,
+    Exploratory,
+    Transcendence,
+    Valence,
+    Arousal,
+}
+
+impl ScoreName {
+    fn column(&self) -> &'static str {
+        match self {
+            Self::Energy => "energy_score",
+            Self::Intensity => "intensity_score",
+            Self::Groove => "groove_score",
+            Self::Improvisation => "improvisation_score",
+            Self::Tightness => "tightness_score",
+            Self::BuildQuality => "build_quality_score",
+            Self::Exploratory => "exploratory_score",
+            Self::Transcendence => "transcendence_score",
+            Self::Valence => "valence_score",
+            Self::Arousal => "arousal_score",
+        }
+    }
+
+    fn label(&self) -> &'static str {
+        match self {
+            Self::Energy => "energy",
+            Self::Intensity => "intensity",
+            Self::Groove => "groove",
+            Self::Improvisation => "improvisation",
+            Self::Tightness => "tightness",
+            Self::BuildQuality => "build quality",
+            Self::Exploratory => "exploratory",
+            Self::Transcendence => "transcendence",
+            Self::Valence => "valence",
+            Self::Arousal => "arousal",
+        }
+    }
 }
 
 #[derive(Subcommand)]
@@ -54,6 +102,45 @@ enum Commands {
 
     /// Recompute jam scores from stored features (no audio re-analysis)
     Rescore,
+
+    /// Show top tracks ranked by a jam score
+    Top {
+        /// Which score to rank by
+        #[arg(value_enum, default_value = "groove")]
+        score: ScoreName,
+
+        /// Number of results
+        #[arg(short = 'n', long, default_value = "20")]
+        limit: usize,
+
+        /// Filter by song title (substring match)
+        #[arg(short, long)]
+        song: Option<String>,
+
+        /// Minimum duration in minutes
+        #[arg(long)]
+        min_duration: Option<f64>,
+    },
+
+    /// Compare versions of a song across shows
+    Compare {
+        /// Song title to search for (substring match)
+        song: String,
+
+        /// Sort by this score (or "duration")
+        #[arg(short, long, default_value = "improvisation")]
+        sort: ScoreName,
+
+        /// Number of results
+        #[arg(short = 'n', long, default_value = "20")]
+        limit: usize,
+    },
+
+    /// View a show's setlist with scores
+    Show {
+        /// Show date (YYYY-MM-DD)
+        date: String,
+    },
 
     /// Show library statistics
     Stats,
@@ -125,6 +212,54 @@ fn main() -> Result<()> {
             println!("Rescore complete: {} tracks updated", result.rescored);
         }
 
+        Commands::Top { score, limit, song, min_duration } => {
+            let min_dur_secs = min_duration.map(|m| m * 60.0);
+            let results = db.query_top(
+                score.column(), limit, song.as_deref(), min_dur_secs,
+            ).context("Query failed")?;
+
+            if results.is_empty() {
+                println!("No results found.");
+                return Ok(());
+            }
+
+            println!("Top {} tracks by {}:", results.len(), score.label());
+            println!();
+            print_score_table(&results, Some(&score));
+        }
+
+        Commands::Compare { song, sort, limit } => {
+            let results = db.query_compare(&song, sort.column(), limit)
+                .context("Query failed")?;
+
+            if results.is_empty() {
+                println!("No analyzed tracks matching \"{}\".", song);
+                return Ok(());
+            }
+
+            println!(
+                "{} versions of \"{}\" (sorted by {}):",
+                results.len(),
+                results[0].title,
+                sort.label()
+            );
+            println!();
+            print_score_table(&results, Some(&sort));
+        }
+
+        Commands::Show { date } => {
+            let results = db.query_show(&date).context("Query failed")?;
+
+            if results.is_empty() {
+                println!("No analyzed tracks for date {}.", date);
+                return Ok(());
+            }
+
+            println!("Show: {}", date);
+            println!();
+            print_score_table(&results, None);
+        }
+
         Commands::Stats => {
             let stats = db.stats().context("Failed to get stats")?;
             println!("Library Statistics");
@@ -155,4 +290,48 @@ fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Print a table of track scores with the sort column highlighted.
+fn print_score_table(tracks: &[TrackScore], highlight: Option<&ScoreName>) {
+    // Header
+    println!(
+        "{:<25} {:>10} {:>5}  {:>4} {:>4} {:>4} {:>4} {:>4} {:>4} {:>4} {:>4}",
+        "Song", "Date", "Min",
+        "Grv", "Imp", "Eng", "Int", "Tgt", "Bld", "Exp", "Trn"
+    );
+    println!("{}", "-".repeat(97));
+
+    for t in tracks {
+        // Truncate long titles
+        let title: String = if t.title.len() > 25 {
+            format!("{}...", &t.title[..22])
+        } else {
+            t.title.clone()
+        };
+
+        println!(
+            "{:<25} {:>10} {:>5.1}  {:>4.0} {:>4.0} {:>4.0} {:>4.0} {:>4.0} {:>4.0} {:>4.0} {:>4.0}",
+            title,
+            t.date,
+            t.duration_min,
+            t.groove,
+            t.improvisation,
+            t.energy,
+            t.intensity,
+            t.tightness,
+            t.build_quality,
+            t.exploratory,
+            t.transcendence,
+        );
+    }
+
+    // Legend
+    println!();
+    println!("Grv=Groove  Imp=Improvisation  Eng=Energy  Int=Intensity");
+    println!("Tgt=Tightness  Bld=Build Quality  Exp=Exploratory  Trn=Transcendence");
+
+    if let Some(hl) = highlight {
+        println!("Sorted by: {}", hl.label());
+    }
 }

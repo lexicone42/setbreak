@@ -1,6 +1,6 @@
 use super::models::{
     ChordEvent, LibraryStats, NewAnalysis, NewTrack, SegmentRecord, TensionPointRecord, Track,
-    TransitionRecord,
+    TrackScore, TransitionRecord,
 };
 use super::{Database, Result};
 use rusqlite::params;
@@ -543,6 +543,187 @@ impl Database {
             ],
         )?;
         Ok(())
+    }
+
+    /// Query top tracks by a given score column.
+    /// `score_column` must be one of the valid score column names.
+    pub fn query_top(
+        &self,
+        score_column: &str,
+        limit: usize,
+        song_filter: Option<&str>,
+        min_duration_secs: Option<f64>,
+    ) -> Result<Vec<TrackScore>> {
+        // Validate score column to prevent SQL injection
+        let valid_columns = [
+            "energy_score", "intensity_score", "groove_score", "improvisation_score",
+            "tightness_score", "build_quality_score", "exploratory_score",
+            "transcendence_score", "valence_score", "arousal_score",
+        ];
+        if !valid_columns.contains(&score_column) {
+            return Ok(vec![]);
+        }
+
+        let mut sql = format!(
+            "SELECT
+                COALESCE(t.parsed_title, t.title, '(untitled)'),
+                COALESCE(t.parsed_date, t.date, '?'),
+                COALESCE(a.duration, 0.0) / 60.0,
+                a.estimated_key, a.tempo_bpm,
+                COALESCE(a.energy_score, 0), COALESCE(a.intensity_score, 0),
+                COALESCE(a.groove_score, 0), COALESCE(a.improvisation_score, 0),
+                COALESCE(a.tightness_score, 0), COALESCE(a.build_quality_score, 0),
+                COALESCE(a.exploratory_score, 0), COALESCE(a.transcendence_score, 0),
+                COALESCE(a.valence_score, 0), COALESCE(a.arousal_score, 0)
+             FROM analysis_results a
+             JOIN tracks t ON t.id = a.track_id
+             WHERE a.{score_column} IS NOT NULL"
+        );
+
+        let mut params_vec: Vec<Box<dyn rusqlite::types::ToSql>> = vec![];
+
+        if let Some(song) = song_filter {
+            params_vec.push(Box::new(format!("%{song}%")));
+            sql += &format!(
+                " AND (t.parsed_title LIKE ?{n} OR t.title LIKE ?{n})",
+                n = params_vec.len()
+            );
+        }
+
+        if let Some(min_dur) = min_duration_secs {
+            params_vec.push(Box::new(min_dur));
+            sql += &format!(" AND a.duration >= ?{}", params_vec.len());
+        }
+
+        sql += &format!(" ORDER BY a.{score_column} DESC LIMIT {limit}");
+
+        let params_refs: Vec<&dyn rusqlite::types::ToSql> =
+            params_vec.iter().map(|p| p.as_ref()).collect();
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt
+            .query_map(params_refs.as_slice(), |row| {
+                Ok(TrackScore {
+                    title: row.get(0)?,
+                    date: row.get(1)?,
+                    duration_min: row.get(2)?,
+                    key: row.get(3)?,
+                    tempo: row.get(4)?,
+                    energy: row.get(5)?,
+                    intensity: row.get(6)?,
+                    groove: row.get(7)?,
+                    improvisation: row.get(8)?,
+                    tightness: row.get(9)?,
+                    build_quality: row.get(10)?,
+                    exploratory: row.get(11)?,
+                    transcendence: row.get(12)?,
+                    valence: row.get(13)?,
+                    arousal: row.get(14)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    /// Compare versions of a song across shows.
+    pub fn query_compare(
+        &self,
+        song: &str,
+        sort_by: &str,
+        limit: usize,
+    ) -> Result<Vec<TrackScore>> {
+        let valid_columns = [
+            "energy_score", "intensity_score", "groove_score", "improvisation_score",
+            "tightness_score", "build_quality_score", "exploratory_score",
+            "transcendence_score", "valence_score", "arousal_score", "duration",
+        ];
+        let order_col = if valid_columns.contains(&sort_by) { sort_by } else { "duration" };
+
+        let sql = format!(
+            "SELECT
+                COALESCE(t.parsed_title, t.title, '(untitled)'),
+                COALESCE(t.parsed_date, t.date, '?'),
+                COALESCE(a.duration, 0.0) / 60.0,
+                a.estimated_key, a.tempo_bpm,
+                COALESCE(a.energy_score, 0), COALESCE(a.intensity_score, 0),
+                COALESCE(a.groove_score, 0), COALESCE(a.improvisation_score, 0),
+                COALESCE(a.tightness_score, 0), COALESCE(a.build_quality_score, 0),
+                COALESCE(a.exploratory_score, 0), COALESCE(a.transcendence_score, 0),
+                COALESCE(a.valence_score, 0), COALESCE(a.arousal_score, 0)
+             FROM analysis_results a
+             JOIN tracks t ON t.id = a.track_id
+             WHERE (t.parsed_title LIKE ?1 OR t.title LIKE ?1)
+             ORDER BY a.{order_col} DESC
+             LIMIT ?2"
+        );
+
+        let pattern = format!("%{song}%");
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt
+            .query_map(params![pattern, limit as i64], |row| {
+                Ok(TrackScore {
+                    title: row.get(0)?,
+                    date: row.get(1)?,
+                    duration_min: row.get(2)?,
+                    key: row.get(3)?,
+                    tempo: row.get(4)?,
+                    energy: row.get(5)?,
+                    intensity: row.get(6)?,
+                    groove: row.get(7)?,
+                    improvisation: row.get(8)?,
+                    tightness: row.get(9)?,
+                    build_quality: row.get(10)?,
+                    exploratory: row.get(11)?,
+                    transcendence: row.get(12)?,
+                    valence: row.get(13)?,
+                    arousal: row.get(14)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    /// Get all analyzed tracks for a given show date.
+    pub fn query_show(&self, date: &str) -> Result<Vec<TrackScore>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT
+                COALESCE(t.parsed_title, t.title, '(untitled)'),
+                COALESCE(t.parsed_date, t.date, '?'),
+                COALESCE(a.duration, 0.0) / 60.0,
+                a.estimated_key, a.tempo_bpm,
+                COALESCE(a.energy_score, 0), COALESCE(a.intensity_score, 0),
+                COALESCE(a.groove_score, 0), COALESCE(a.improvisation_score, 0),
+                COALESCE(a.tightness_score, 0), COALESCE(a.build_quality_score, 0),
+                COALESCE(a.exploratory_score, 0), COALESCE(a.transcendence_score, 0),
+                COALESCE(a.valence_score, 0), COALESCE(a.arousal_score, 0)
+             FROM analysis_results a
+             JOIN tracks t ON t.id = a.track_id
+             WHERE t.parsed_date = ?1 OR t.date = ?1
+             ORDER BY COALESCE(t.parsed_disc, t.disc_number, 1),
+                      COALESCE(t.parsed_track, t.track_number, 999)"
+        )?;
+
+        let rows = stmt
+            .query_map(params![date], |row| {
+                Ok(TrackScore {
+                    title: row.get(0)?,
+                    date: row.get(1)?,
+                    duration_min: row.get(2)?,
+                    key: row.get(3)?,
+                    tempo: row.get(4)?,
+                    energy: row.get(5)?,
+                    intensity: row.get(6)?,
+                    groove: row.get(7)?,
+                    improvisation: row.get(8)?,
+                    tightness: row.get(9)?,
+                    build_quality: row.get(10)?,
+                    exploratory: row.get(11)?,
+                    transcendence: row.get(12)?,
+                    valence: row.get(13)?,
+                    arousal: row.get(14)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
     }
 
     /// Get library statistics.

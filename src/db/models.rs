@@ -225,6 +225,26 @@ pub struct TransitionRecord {
     pub duration: Option<f64>,
 }
 
+/// A track with its jam scores (for query display).
+#[derive(Debug)]
+pub struct TrackScore {
+    pub title: String,
+    pub date: String,
+    pub duration_min: f64,
+    pub key: Option<String>,
+    pub tempo: Option<f64>,
+    pub energy: f64,
+    pub intensity: f64,
+    pub groove: f64,
+    pub improvisation: f64,
+    pub tightness: f64,
+    pub build_quality: f64,
+    pub exploratory: f64,
+    pub transcendence: f64,
+    pub valence: f64,
+    pub arousal: f64,
+}
+
 /// Library statistics.
 #[derive(Debug)]
 pub struct LibraryStats {
