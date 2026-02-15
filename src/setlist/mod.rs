@@ -163,9 +163,26 @@ pub fn lookup_setlists(db: &Database, dry_run: bool) -> Result<SetlistResult> {
     Ok(result)
 }
 
+/// Percent-encode characters that break archive.org URLs (spaces, parens, etc.)
+fn encode_identifier(id: &str) -> String {
+    let mut out = String::with_capacity(id.len());
+    for c in id.chars() {
+        match c {
+            ' ' => out.push_str("%20"),
+            '(' => out.push_str("%28"),
+            ')' => out.push_str("%29"),
+            '[' => out.push_str("%5B"),
+            ']' => out.push_str("%5D"),
+            _ => out.push(c),
+        }
+    }
+    out
+}
+
 /// Fetch archive.org metadata for an identifier and return a filename -> title map.
 fn fetch_archive_metadata(identifier: &str) -> Result<HashMap<String, String>> {
-    let url = format!("https://archive.org/metadata/{identifier}");
+    let encoded = encode_identifier(identifier);
+    let url = format!("https://archive.org/metadata/{encoded}");
     log::debug!("Fetching {url}");
 
     let response: ArchiveMetadata = ureq::get(&url)

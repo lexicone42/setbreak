@@ -25,6 +25,41 @@ pub struct AnalyzeResult {
     pub failed: u64,
 }
 
+pub struct RescoreResult {
+    pub rescored: usize,
+}
+
+/// Recompute all jam scores from stored feature data (no audio re-analysis).
+pub fn rescore_tracks(db: &Database) -> Result<RescoreResult, AnalyzeError> {
+    let mut analyses = db.get_analyses_for_rescore()?;
+    let total = analyses.len();
+
+    if total == 0 {
+        return Ok(RescoreResult { rescored: 0 });
+    }
+
+    let pb = ProgressBar::new(total as u64);
+    pb.set_style(
+        ProgressStyle::default_bar()
+            .template("{spinner:.green} [{bar:40.cyan/blue}] {pos}/{len} tracks ({eta} remaining)")
+            .unwrap()
+            .progress_chars("=>-"),
+    );
+
+    let tx = db.conn.unchecked_transaction().map_err(|e| AnalyzeError::Db(e.into()))?;
+
+    for a in &mut analyses {
+        jam_metrics::compute_jam_scores_from_scalars(a);
+        db.update_jam_scores(a)?;
+        pb.inc(1);
+    }
+
+    tx.commit().map_err(|e| AnalyzeError::Db(e.into()))?;
+    pb.finish_with_message("done");
+
+    Ok(RescoreResult { rescored: total })
+}
+
 /// Full result from analyzing a single track (before DB write).
 struct TrackAnalysis {
     track_id: i64,

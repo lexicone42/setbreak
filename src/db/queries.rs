@@ -417,6 +417,128 @@ impl Database {
         Self::store_analysis_row(&self.conn, a)
     }
 
+    /// Load all analysis rows with fields needed for score computation.
+    /// Returns NewAnalysis structs with score-relevant fields populated.
+    pub fn get_analyses_for_rescore(&self) -> Result<Vec<NewAnalysis>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT track_id, duration, rms_level, lufs_integrated,
+                spectral_centroid_mean, spectral_centroid_std,
+                spectral_flux_mean, spectral_flux_std,
+                dynamic_range, loudness_range,
+                onset_count, beat_count, tempo_bpm,
+                tempo_stability, coherence_score,
+                pitch_range_low, pitch_range_high,
+                harmonic_complexity, key_confidence, key_alternatives_count,
+                chord_count, tonality, energy_level,
+                estimated_key, energy_shape, peak_energy, energy_variance,
+                tension_build_count, tension_release_count,
+                repetition_similarity, solo_section_count,
+                transition_count, segment_count
+             FROM analysis_results",
+        )?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(NewAnalysis {
+                    track_id: row.get(0)?,
+                    duration: row.get(1)?,
+                    rms_level: row.get(2)?,
+                    lufs_integrated: row.get(3)?,
+                    spectral_centroid_mean: row.get(4)?,
+                    spectral_centroid_std: row.get(5)?,
+                    spectral_flux_mean: row.get(6)?,
+                    spectral_flux_std: row.get(7)?,
+                    dynamic_range: row.get(8)?,
+                    loudness_range: row.get(9)?,
+                    onset_count: row.get(10)?,
+                    beat_count: row.get(11)?,
+                    tempo_bpm: row.get(12)?,
+                    tempo_stability: row.get(13)?,
+                    coherence_score: row.get(14)?,
+                    pitch_range_low: row.get(15)?,
+                    pitch_range_high: row.get(16)?,
+                    harmonic_complexity: row.get(17)?,
+                    key_confidence: row.get(18)?,
+                    key_alternatives_count: row.get(19)?,
+                    chord_count: row.get(20)?,
+                    tonality: row.get(21)?,
+                    energy_level: row.get(22)?,
+                    estimated_key: row.get(23)?,
+                    energy_shape: row.get(24)?,
+                    peak_energy: row.get(25)?,
+                    energy_variance: row.get(26)?,
+                    tension_build_count: row.get(27)?,
+                    tension_release_count: row.get(28)?,
+                    repetition_similarity: row.get(29)?,
+                    solo_section_count: row.get(30)?,
+                    transition_count: row.get(31)?,
+                    segment_count: row.get(32)?,
+                    // Fields not needed for scoring — set to None/defaults
+                    sample_rate: None, channels: None, peak_amplitude: None,
+                    spectral_rolloff_mean: None, spectral_rolloff_std: None,
+                    spectral_flatness_mean: None, spectral_flatness_std: None,
+                    spectral_bandwidth_mean: None, spectral_bandwidth_std: None,
+                    zcr_mean: None, zcr_std: None,
+                    sub_band_bass_mean: None, sub_band_bass_std: None,
+                    sub_band_mid_mean: None, sub_band_mid_std: None,
+                    sub_band_high_mean: None, sub_band_high_std: None,
+                    sub_band_presence_mean: None, sub_band_presence_std: None,
+                    mfcc_0_mean: None, mfcc_0_std: None,
+                    mfcc_1_mean: None, mfcc_1_std: None,
+                    mfcc_2_mean: None, mfcc_2_std: None,
+                    mfcc_3_mean: None, mfcc_3_std: None,
+                    mfcc_4_mean: None, mfcc_4_std: None,
+                    mfcc_5_mean: None, mfcc_5_std: None,
+                    mfcc_6_mean: None, mfcc_6_std: None,
+                    mfcc_7_mean: None, mfcc_7_std: None,
+                    mfcc_8_mean: None, mfcc_8_std: None,
+                    mfcc_9_mean: None, mfcc_9_std: None,
+                    mfcc_10_mean: None, mfcc_10_std: None,
+                    mfcc_11_mean: None, mfcc_11_std: None,
+                    mfcc_12_mean: None, mfcc_12_std: None,
+                    rhythmic_complexity: None, mean_pitch: None,
+                    pitch_stability: None, dominant_pitch: None,
+                    vibrato_presence: None, vibrato_rate: None,
+                    pitch_confidence_mean: None,
+                    true_peak_dbfs: None, crest_factor: None,
+                    chord_change_rate: None, mode_clarity: None,
+                    time_sig_numerator: None, time_sig_denominator: None,
+                    chroma_vector: None,
+                    recording_quality_score: None, snr_db: None,
+                    clipping_ratio: None, noise_floor_db: None,
+                    temporal_complexity: None,
+                    repetition_count: None, solo_section_ratio: None,
+                    classification_music_score: None, hnr: None,
+                    valence_score: None, arousal_score: None,
+                    energy_score: None, intensity_score: None,
+                    groove_score: None, improvisation_score: None,
+                    tightness_score: None, build_quality_score: None,
+                    exploratory_score: None, transcendence_score: None,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    /// Update only the 10 jam score columns for a given track.
+    pub fn update_jam_scores(&self, a: &NewAnalysis) -> Result<()> {
+        self.conn.execute(
+            "UPDATE analysis_results SET
+                energy_score = ?1, intensity_score = ?2, groove_score = ?3,
+                improvisation_score = ?4, tightness_score = ?5, build_quality_score = ?6,
+                exploratory_score = ?7, transcendence_score = ?8,
+                valence_score = ?9, arousal_score = ?10
+             WHERE track_id = ?11",
+            params![
+                a.energy_score, a.intensity_score, a.groove_score,
+                a.improvisation_score, a.tightness_score, a.build_quality_score,
+                a.exploratory_score, a.transcendence_score,
+                a.valence_score, a.arousal_score,
+                a.track_id,
+            ],
+        )?;
+        Ok(())
+    }
+
     /// Get library statistics.
     pub fn stats(&self) -> Result<LibraryStats> {
         let total_tracks: i64 = self.conn.query_row(

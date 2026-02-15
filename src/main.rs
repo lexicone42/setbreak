@@ -52,6 +52,9 @@ enum Commands {
         dry_run: bool,
     },
 
+    /// Recompute jam scores from stored features (no audio re-analysis)
+    Rescore,
+
     /// Show library statistics
     Stats,
 }
@@ -114,6 +117,12 @@ fn main() -> Result<()> {
             if dry_run && result.titles_updated > 0 {
                 println!("(dry run — re-run without --dry-run to write changes)");
             }
+        }
+
+        Commands::Rescore => {
+            let result = setbreak::analyzer::rescore_tracks(&db)
+                .context("Rescore failed")?;
+            println!("Rescore complete: {} tracks updated", result.rescored);
         }
 
         Commands::Stats => {
