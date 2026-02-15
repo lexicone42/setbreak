@@ -14,35 +14,9 @@ pub struct ParsedPath {
     pub title: Option<String>,
 }
 
-/// Known band code mappings (archive.org conventions).
-fn expand_band_code(code: &str) -> Option<&'static str> {
-    match code.to_lowercase().as_str() {
-        "gd" => Some("Grateful Dead"),
-        "jg" | "jgb" => Some("Jerry Garcia Band"),
-        "ph" | "phish" => Some("Phish"),
-        "wsp" => Some("Widespread Panic"),
-        "moe" => Some("moe."),
-        "sts9" | "s9" => Some("Sound Tribe Sector 9"),
-        "um" | "ump" => Some("Umphrey's McGee"),
-        "bisco" | "db" => Some("Disco Biscuits"),
-        "ween" => Some("Ween"),
-        "mule" => Some("Gov't Mule"),
-        "abband" | "abb" => Some("Allman Brothers Band"),
-        "dso" => Some("Dark Star Orchestra"),
-        "lsz" | "led" => Some("Led Zeppelin"),
-        "goose" => Some("Goose"),
-        "bts" => Some("Built to Spill"),
-        "billy" | "bs" | "bsco" => Some("Billy Strings"),
-        "kg" | "kglw" => Some("King Gizzard & the Lizard Wizard"),
-        "trey" | "tab" => Some("Trey Anastasio Band"),
-        "lotus" => Some("Lotus"),
-        "jrad" => Some("Joe Russo's Almost Dead"),
-        "sci" => Some("String Cheese Incident"),
-        "lmg" | "lemon" => Some("Leftover Salmon"),
-        "mmw" => Some("Medeski Martin & Wood"),
-        "panic" => Some("Widespread Panic"),
-        _ => None,
-    }
+/// Look up a band code via the global BandRegistry.
+fn expand_band_code(code: &str) -> Option<String> {
+    crate::bands::registry().lookup_code(code).map(|s| s.to_string())
 }
 
 /// Expand a 2-digit year to 4 digits (30-99 → 19xx, 00-29 → 20xx).
@@ -162,7 +136,7 @@ pub fn parse_path(path: &Path) -> ParsedPath {
         let day = caps.name("day").unwrap().as_str();
 
         if is_valid_date(month, day) {
-            parsed.band = expand_band_code(code).map(|s| s.to_string());
+            parsed.band = expand_band_code(code);
             parsed.date = Some(build_date(year, month, day));
 
             // Extract disc/track/set from remainder of filename
@@ -207,8 +181,9 @@ pub fn parse_path(path: &Path) -> ParsedPath {
         .collect();
 
     // Walk components for band name (directory-based)
+    let registry = crate::bands::registry();
     for comp in &components {
-        if let Some(band) = expand_band_code(comp) {
+        if let Some(band) = registry.lookup_code(comp) {
             parsed.band = Some(band.to_string());
             break;
         }
@@ -217,22 +192,8 @@ pub fn parse_path(path: &Path) -> ParsedPath {
     // If no band code matched, check for full band names in path components
     if parsed.band.is_none() {
         for comp in &components {
-            // Normalize underscores to spaces for matching (grateful_dead → grateful dead)
-            let lower = comp.to_lowercase().replace('_', " ");
-            let known_bands = [
-                "grateful dead", "phish", "widespread panic", "goose", "billy strings",
-                "umphrey's mcgee", "disco biscuits", "moe.", "string cheese incident",
-                "dark star orchestra", "trey anastasio band", "lotus", "ween",
-                "gov't mule", "allman brothers band", "joe russo's almost dead",
-                "king gizzard", "medeski martin", "built to spill",
-            ];
-            for band in &known_bands {
-                if lower == *band || lower.starts_with(band) {
-                    parsed.band = Some(titlecase_band(band));
-                    break;
-                }
-            }
-            if parsed.band.is_some() {
+            if let Some(band) = registry.lookup_search_name(comp) {
+                parsed.band = Some(band.to_string());
                 break;
             }
         }
@@ -293,38 +254,22 @@ pub fn parse_path(path: &Path) -> ParsedPath {
     parsed
 }
 
-fn titlecase_band(s: &str) -> String {
-    match s {
-        "grateful dead" => "Grateful Dead".to_string(),
-        "phish" => "Phish".to_string(),
-        "widespread panic" => "Widespread Panic".to_string(),
-        "goose" => "Goose".to_string(),
-        "billy strings" => "Billy Strings".to_string(),
-        "umphrey's mcgee" => "Umphrey's McGee".to_string(),
-        "disco biscuits" => "Disco Biscuits".to_string(),
-        "moe." => "moe.".to_string(),
-        "string cheese incident" => "String Cheese Incident".to_string(),
-        "dark star orchestra" => "Dark Star Orchestra".to_string(),
-        "trey anastasio band" => "Trey Anastasio Band".to_string(),
-        "lotus" => "Lotus".to_string(),
-        "ween" => "Ween".to_string(),
-        "gov't mule" => "Gov't Mule".to_string(),
-        "allman brothers band" => "Allman Brothers Band".to_string(),
-        "joe russo's almost dead" => "Joe Russo's Almost Dead".to_string(),
-        "built to spill" => "Built to Spill".to_string(),
-        _ => s.to_string(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::path::PathBuf;
+    use std::sync::Once;
+
+    static INIT: Once = Once::new();
+    fn setup() {
+        INIT.call_once(|| crate::bands::init_default());
+    }
 
     // === Compact format (band code + date in filename) ===
 
     #[test]
     fn test_compact_gd_4digit_year() {
+        setup();
         let p = PathBuf::from("gd1977-05-08d1t01.shn");
         let r = parse_path(&p);
         assert_eq!(r.band.as_deref(), Some("Grateful Dead"));
@@ -335,6 +280,7 @@ mod tests {
 
     #[test]
     fn test_compact_gd_2digit_year_70s() {
+        setup();
         let p = PathBuf::from("gd71-04-18d1t04.shn");
         let r = parse_path(&p);
         assert_eq!(r.band.as_deref(), Some("Grateful Dead"));
@@ -345,6 +291,7 @@ mod tests {
 
     #[test]
     fn test_compact_gd_2digit_year_80s() {
+        setup();
         let p = PathBuf::from("gd80-01-13d2t05.mp3");
         let r = parse_path(&p);
         assert_eq!(r.band.as_deref(), Some("Grateful Dead"));
@@ -355,6 +302,7 @@ mod tests {
 
     #[test]
     fn test_compact_gd_2digit_year_90s() {
+        setup();
         let p = PathBuf::from("gd93-04-01d1t02.mp3");
         let r = parse_path(&p);
         assert_eq!(r.band.as_deref(), Some("Grateful Dead"));
@@ -366,6 +314,7 @@ mod tests {
     #[test]
     fn test_compact_source_tag_between_date_and_track() {
         // gd74-06-23sbd_t26.mp3 — "sbd" source tag, underscore before track
+        setup();
         let p = PathBuf::from("gd74-06-23sbd_t26.mp3");
         let r = parse_path(&p);
         assert_eq!(r.band.as_deref(), Some("Grateful Dead"));
@@ -377,6 +326,7 @@ mod tests {
     #[test]
     fn test_compact_set_track_notation() {
         // ph2013-12-31.mk5-s2t09.flac — set 2, track 9
+        setup();
         let p = PathBuf::from("ph2013-12-31.mk5-s2t09.flac");
         let r = parse_path(&p);
         assert_eq!(r.band.as_deref(), Some("Phish"));
@@ -387,6 +337,7 @@ mod tests {
 
     #[test]
     fn test_compact_motb_format() {
+        setup();
         let p = PathBuf::from("gd1979-10-31.motb.0039.s2t10.mp3");
         let r = parse_path(&p);
         assert_eq!(r.band.as_deref(), Some("Grateful Dead"));
@@ -398,6 +349,7 @@ mod tests {
     #[test]
     fn test_compact_combined_disc_track() {
         // d206 = disc 2, track 06 (no t separator)
+        setup();
         let p = PathBuf::from("ph1997-11-14d206.mp3");
         let r = parse_path(&p);
         assert_eq!(r.band.as_deref(), Some("Phish"));
@@ -408,6 +360,7 @@ mod tests {
 
     #[test]
     fn test_compact_track_word_spelled_out() {
+        setup();
         let p = PathBuf::from("gd71-12-31d2track06.mp3");
         let r = parse_path(&p);
         assert_eq!(r.band.as_deref(), Some("Grateful Dead"));
@@ -418,6 +371,7 @@ mod tests {
 
     #[test]
     fn test_compact_tr_prefix() {
+        setup();
         let p = PathBuf::from("gd1993-09-24-d1-tr03.wav");
         let r = parse_path(&p);
         assert_eq!(r.band.as_deref(), Some("Grateful Dead"));
@@ -428,6 +382,7 @@ mod tests {
 
     #[test]
     fn test_compact_single_digit_month() {
+        setup();
         let p = PathBuf::from("gd71-4-22d1t05.mp3");
         let r = parse_path(&p);
         assert_eq!(r.date.as_deref(), Some("1971-04-22"));
@@ -437,6 +392,7 @@ mod tests {
 
     #[test]
     fn test_compact_phish() {
+        setup();
         let p = PathBuf::from("ph1997-11-22t04.flac");
         let r = parse_path(&p);
         assert_eq!(r.band.as_deref(), Some("Phish"));
@@ -447,6 +403,7 @@ mod tests {
 
     #[test]
     fn test_compact_no_disc_or_track() {
+        setup();
         let p = PathBuf::from("gd1972-08-27.shn");
         let r = parse_path(&p);
         assert_eq!(r.band.as_deref(), Some("Grateful Dead"));
@@ -457,6 +414,7 @@ mod tests {
 
     #[test]
     fn test_compact_uppercase() {
+        setup();
         let p = PathBuf::from("GD70-02-06d1t01.shn");
         let r = parse_path(&p);
         assert_eq!(r.band.as_deref(), Some("Grateful Dead"));
@@ -468,6 +426,7 @@ mod tests {
     #[test]
     fn test_compact_invalid_date_rejected() {
         // gd08-06-71 — day 71 is invalid, should not match as a date
+        setup();
         let p = PathBuf::from("gd08-06-71d2t06_vbr.mp3");
         let r = parse_path(&p);
         // BAND_DATE_RE matches but is_valid_date rejects day=71
@@ -479,6 +438,7 @@ mod tests {
 
     #[test]
     fn test_path_based_grateful_dead() {
+        setup();
         let p = PathBuf::from("Grateful Dead/1977/1977-05-08 Barton Hall/d1t01 - Scarlet Begonias.mp3");
         let r = parse_path(&p);
         assert_eq!(r.band.as_deref(), Some("Grateful Dead"));
@@ -491,6 +451,7 @@ mod tests {
 
     #[test]
     fn test_set_based_phish() {
+        setup();
         let p = PathBuf::from("Phish/1997.11.22/Set II/04 - Tweezer.flac");
         let r = parse_path(&p);
         assert_eq!(r.band.as_deref(), Some("Phish"));
@@ -502,6 +463,7 @@ mod tests {
 
     #[test]
     fn test_set_encore() {
+        setup();
         let p = PathBuf::from("Phish/2023.07.14/Set Encore/01 - Tweezer Reprise.flac");
         let r = parse_path(&p);
         assert_eq!(r.set.as_deref(), Some("Encore"));
@@ -510,6 +472,7 @@ mod tests {
     #[test]
     fn test_underscore_band_directory() {
         // grateful_dead directory should match "grateful dead"
+        setup();
         let p = PathBuf::from("grateful_dead/some_show/01 - Dark Star.mp3");
         let r = parse_path(&p);
         assert_eq!(r.band.as_deref(), Some("Grateful Dead"));
@@ -521,6 +484,7 @@ mod tests {
 
     #[test]
     fn test_generic_fallback_date() {
+        setup();
         let p = PathBuf::from("music/2023.12.31/03 - Midnight Jam.mp3");
         let r = parse_path(&p);
         assert_eq!(r.date.as_deref(), Some("2023-12-31"));
@@ -531,6 +495,7 @@ mod tests {
     #[test]
     fn test_generic_date_2digit_year_in_path() {
         // Date extracted from directory name with 2-digit year
+        setup();
         let p = PathBuf::from("grateful_dead/gd85-11-10/disc207-truckin.mp3");
         let r = parse_path(&p);
         assert_eq!(r.band.as_deref(), Some("Grateful Dead"));
@@ -539,6 +504,7 @@ mod tests {
 
     #[test]
     fn test_generic_track_with_dash() {
+        setup();
         let p = PathBuf::from("01 - Dark Star.mp3");
         let r = parse_path(&p);
         assert_eq!(r.track, Some(1));
@@ -548,6 +514,7 @@ mod tests {
     #[test]
     fn test_generic_track_space_only() {
         // Baker's Dozen style: "23 Good Times Bad Times.flac"
+        setup();
         let p = PathBuf::from("23 Good Times Bad Times.flac");
         let r = parse_path(&p);
         assert_eq!(r.track, Some(23));
@@ -557,6 +524,7 @@ mod tests {
     #[test]
     fn test_generic_track_no_false_match_on_digits() {
         // "2_01.mp3" should NOT match as track 2 title "01"
+        setup();
         let p = PathBuf::from("2_01.mp3");
         let r = parse_path(&p);
         // title should be None (no alpha start) or track should handle differently
@@ -565,6 +533,7 @@ mod tests {
 
     #[test]
     fn test_unknown_band() {
+        setup();
         let p = PathBuf::from("Random Band/2020-01-15/01 - Song.mp3");
         let r = parse_path(&p);
         assert_eq!(r.band, None);
@@ -574,6 +543,7 @@ mod tests {
 
     #[test]
     fn test_band_code_goose() {
+        setup();
         let p = PathBuf::from("goose/goose2023-06-10d1t05.flac");
         let r = parse_path(&p);
         assert_eq!(r.band.as_deref(), Some("Goose"));
@@ -581,6 +551,7 @@ mod tests {
 
     #[test]
     fn test_compact_goose_full() {
+        setup();
         let p = PathBuf::from("goose2023-06-10d1t05.flac");
         let r = parse_path(&p);
         assert_eq!(r.band.as_deref(), Some("Goose"));

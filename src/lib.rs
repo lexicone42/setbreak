@@ -1,4 +1,5 @@
 pub mod analyzer;
+pub mod bands;
 pub mod chains;
 pub mod config;
 pub mod db;

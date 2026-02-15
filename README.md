@@ -12,14 +12,18 @@ Built for Grateful Dead tape collections, but works with any jam-band library (P
 **Scan** your music library to catalog tracks, parsing band names, show dates, disc/track numbers, and venues from filenames and tags:
 
 ```
-setbreak scan ~/music/grateful_dead/
-# Scan complete: 5761 scanned, 5761 new, 0 updated, 0 skipped, 0 errors
+setbreak scan ~/music/grateful_dead/ ~/music/phish/
+# Scan complete: 8962 scanned, 8962 new, 0 updated, 0 skipped, 0 errors
+
+# Or configure music_dirs in ~/.config/setbreak/config.toml and just:
+setbreak scan
 ```
 
 **Analyze** audio files to extract 80+ features using DSP (FFT, STFT, pitch detection, beat tracking, onset detection, chord estimation):
 
 ```
-setbreak analyze -j4
+setbreak analyze          # auto-detects worker count from config (cores/2)
+setbreak analyze -j4      # or specify explicitly
 # Analysis complete: 1704 analyzed, 3 failed
 ```
 
@@ -82,6 +86,29 @@ Requires Rust 1.85+ (2024 edition) and `ffmpeg` (for SHN file decoding).
 cargo build --release
 ```
 
+## Configuration
+
+Optional TOML config at `~/.config/setbreak/config.toml`. Everything works without it — the file is purely for overrides.
+
+```toml
+music_dirs = ["/home/you/music/grateful_dead", "/home/you/music/phish"]
+# db_path = "/custom/path/setbreak.db"
+workers = 0  # 0 = auto (cores / 2)
+
+[archive]
+cache_ttl_days = 30
+rate_limit_ms = 500
+
+# Custom bands (merged with 23 built-in bands)
+# [[bands]]
+# name = "Lettuce"
+# codes = ["let", "lettuce"]
+# search = ["lettuce"]
+# archive = { type = "creator", value = "Lettuce" }
+```
+
+**Override priority**: CLI argument > config file > built-in default.
+
 The DSP engine is a [fork of ferrous-waves](https://github.com/lexicone42/ferrous-waves) (originally by [willibrandon](https://github.com/willibrandon/ferrous-waves)) with optimizations for batch analysis — duplicate STFT elimination and configurable feature skipping. It's pulled automatically as a git dependency.
 
 ## Architecture
@@ -90,10 +117,11 @@ The DSP engine is a [fork of ferrous-waves](https://github.com/lexicone42/ferrou
 src/
   main.rs              CLI (clap derive)
   lib.rs               Public module exports
-  config.rs            XDG paths
+  bands.rs             Unified band registry (23 bands, 37 codes, OnceLock global)
+  config.rs            TOML config loading + XDG paths
   scanner/
     mod.rs             walkdir traversal + lofty tag reading
-    filename.rs        Regex-based filename parser (20+ band codes)
+    filename.rs        Regex-based filename parser (uses BandRegistry)
     metadata.rs        Tag extraction
   analyzer/
     mod.rs             Parallel analysis (rayon + tokio)

@@ -63,6 +63,30 @@ static BAND_DATE_RE: LazyLock<Regex> = LazyLock::new(|| {
 
 **Before Rust 1.80**: You'd need `once_cell::sync::Lazy` or the `lazy_static!` macro. `LazyLock` is the std equivalent — zero dependencies, same semantics.
 
+## OnceLock for runtime-initialized globals
+
+**Problem**: The `BandRegistry` is a global singleton (every module needs band lookups), but it can't be a compile-time constant because it needs data from the config file (custom bands). `LazyLock` won't work because the initialization closure can't capture runtime data.
+
+**Solution**: `std::sync::OnceLock` — set once at startup, read everywhere:
+
+```rust
+// src/bands.rs
+static REGISTRY: OnceLock<BandRegistry> = OnceLock::new();
+
+pub fn init(custom_bands: &[CustomBandConfig]) {
+    let registry = BandRegistry::new(custom_bands);
+    REGISTRY.set(registry).expect("BandRegistry already initialized");
+}
+
+pub fn registry() -> &'static BandRegistry {
+    REGISTRY.get().expect("BandRegistry not initialized")
+}
+```
+
+**For tests**: `OnceLock::set()` panics on double-init, but tests run in parallel in one process. The `init_default()` function uses `let _ = REGISTRY.set(...)` to silently succeed if already set, combined with `std::sync::Once` in test setup for exactly-once initialization.
+
+**LazyLock vs OnceLock**: Use `LazyLock` when the value can be computed at first access with no external input (regexes, constants). Use `OnceLock` when initialization depends on runtime data (config files, CLI args) and must happen at a controlled point.
+
 ## Versioned SQLite migrations via PRAGMA user_version
 
 **Problem**: The schema evolved across 4 versions as new features were added. Need to migrate existing databases without data loss, and handle "column already exists" gracefully.
@@ -70,7 +94,7 @@ static BAND_DATE_RE: LazyLock<Regex> = LazyLock::new(|| {
 **Solution**: SQLite's `user_version` pragma as a migration tracker:
 
 ```rust
-// src/db/mod.rs:49-69
+// src/db/mod.rs (simplified — currently at v6)
 fn migrate(&self) -> Result<()> {
     let version: i32 = self.conn
         .pragma_query_value(None, "user_version", |row| row.get(0))
@@ -78,10 +102,10 @@ fn migrate(&self) -> Result<()> {
 
     if version < 1 { self.migrate_v1()?; }
     if version < 2 { self.migrate_v2()?; }
-    if version < 3 { self.migrate_v3()?; }
-    if version < 4 { self.migrate_v4()?; }
+    // ... up to v6
+    if version < 6 { self.migrate_v6()?; }
 
-    self.conn.pragma_update(None, "user_version", 4)?;
+    self.conn.pragma_update(None, "user_version", 6)?;
     Ok(())
 }
 ```

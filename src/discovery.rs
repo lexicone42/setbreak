@@ -6,11 +6,9 @@ use anyhow::{Context, Result};
 use indicatif::{ProgressBar, ProgressStyle};
 use serde::Deserialize;
 
+use crate::bands::ArchiveStrategy;
 use crate::db::models::{ArchiveShow, MissingShow};
 use crate::db::Database;
-
-/// Cache TTL in days before re-fetching from archive.org.
-const CACHE_TTL_DAYS: i64 = 30;
 
 /// Results per page from archive.org search API.
 const PAGE_SIZE: usize = 500;
@@ -50,16 +48,22 @@ pub fn discover_missing_shows(
     force_refresh: bool,
     year_filter: Option<&str>,
     limit: usize,
+    cache_ttl_days: i64,
+    rate_limit_ms: u64,
 ) -> Result<DiscoveryResult> {
-    let query = resolve_query(band)?;
-    let cache_key = query_cache_key(&query).to_string();
-    let parsed_band = resolve_parsed_band(band);
+    let registry = crate::bands::registry();
+    let strategy = registry
+        .resolve_archive_query(band)
+        .ok_or_else(|| anyhow::anyhow!("Unknown band '{}'. No archive.org strategy configured.", band))?
+        .clone();
+    let cache_key = query_cache_key(&strategy).to_string();
+    let parsed_band = registry.resolve_canonical_name(band);
 
     // Check cache first
     let archive_shows = if force_refresh {
         None
     } else {
-        db.get_cached_archive_shows(&cache_key, CACHE_TTL_DAYS)
+        db.get_cached_archive_shows(&cache_key, cache_ttl_days)
             .context("Failed to read cache")?
     };
 
@@ -69,12 +73,12 @@ pub fn discover_missing_shows(
             cached
         }
         None => {
-            let label = match &query {
-                ArchiveQuery::Collection(c) => format!("collection '{c}'"),
-                ArchiveQuery::Creator(c) => format!("creator '{c}'"),
+            let label = match &strategy {
+                ArchiveStrategy::Collection(c) => format!("collection '{c}'"),
+                ArchiveStrategy::Creator(c) => format!("creator '{c}'"),
             };
             println!("Fetching shows from archive.org {}...", label);
-            let fetched = fetch_collection_shows(&query)?;
+            let fetched = fetch_collection_shows(&strategy, rate_limit_ms)?;
             let count = db.store_archive_shows(&fetched)
                 .context("Failed to cache shows")?;
             println!("Cached {} shows from archive.org", count);
@@ -162,10 +166,10 @@ const YEAR_RANGES: &[(u32, u32)] = &[
 
 /// Fetch all shows from an archive.org collection or creator.
 /// Uses year-range chunking to avoid Solr's 10K deep-pagination limit.
-fn fetch_collection_shows(query: &ArchiveQuery) -> Result<Vec<ArchiveShow>> {
-    let cache_key = query_cache_key(query);
+fn fetch_collection_shows(strategy: &ArchiveStrategy, rate_limit_ms: u64) -> Result<Vec<ArchiveShow>> {
+    let cache_key = query_cache_key(strategy);
     // First, get total count for progress bar
-    let first_resp = fetch_search_page(query, None, 0, 0)?;
+    let first_resp = fetch_search_page(strategy, None, 0, 0)?;
     let total = first_resp.response.num_found;
 
     let pb = ProgressBar::new(total as u64);
@@ -191,9 +195,9 @@ fn fetch_collection_shows(query: &ArchiveQuery) -> Result<Vec<ArchiveShow>> {
                 break;
             }
 
-            thread::sleep(Duration::from_millis(200));
+            thread::sleep(Duration::from_millis(rate_limit_ms));
 
-            match fetch_search_page(query, date_range, offset, PAGE_SIZE) {
+            match fetch_search_page(strategy, date_range, offset, PAGE_SIZE) {
                 Ok(resp) => {
                     let docs = &resp.response.docs;
                     if docs.is_empty() {
@@ -226,12 +230,12 @@ fn fetch_collection_shows(query: &ArchiveQuery) -> Result<Vec<ArchiveShow>> {
 /// Fetch a single page from the archive.org advanced search API.
 /// If `date_range` is Some, restricts to items with dates in that year range.
 fn fetch_search_page(
-    query: &ArchiveQuery,
+    strategy: &ArchiveStrategy,
     date_range: Option<(u32, u32)>,
     start: usize,
     rows: usize,
 ) -> Result<SearchResponse> {
-    let q_clause = query_clause(query);
+    let q_clause = query_clause(strategy);
     let date_clause = match date_range {
         Some((y1, y2)) => format!("+date%3A%5B{y1}-01-01+TO+{y2}-12-31%5D"),
         None => String::new(),
@@ -317,49 +321,19 @@ fn parse_format_quality(identifier: &str) -> i32 {
     }
 }
 
-/// How to query archive.org for a band's shows.
-enum ArchiveQuery {
-    /// Band has a dedicated collection (e.g., GratefulDead)
-    Collection(String),
-    /// Band uses creator field across multiple collections
-    Creator(String),
-}
-
-/// Resolve band shorthand to archive.org query strategy.
-fn resolve_query(band: &str) -> Result<ArchiveQuery> {
-    match band.to_lowercase().as_str() {
-        "gd" | "grateful dead" | "gratefuldead" => Ok(ArchiveQuery::Collection("GratefulDead".to_string())),
-        "phish" => Ok(ArchiveQuery::Creator("Phish".to_string())),
-        "bts" | "built to spill" => {
-            anyhow::bail!("Built to Spill archive.org collection not yet mapped. Use --band gd for now.")
-        }
-        _ => anyhow::bail!("Unknown band '{}'. Supported: gd, phish", band),
-    }
-}
-
-/// Get the cache key (collection name) for a query.
-fn query_cache_key(query: &ArchiveQuery) -> &str {
-    match query {
-        ArchiveQuery::Collection(c) => c,
-        ArchiveQuery::Creator(c) => c,
+/// Get the cache key (collection/creator name) for a strategy.
+fn query_cache_key(strategy: &ArchiveStrategy) -> &str {
+    match strategy {
+        ArchiveStrategy::Collection(c) => c,
+        ArchiveStrategy::Creator(c) => c,
     }
 }
 
 /// Build the search query string for archive.org.
-fn query_clause(query: &ArchiveQuery) -> String {
-    match query {
-        ArchiveQuery::Collection(c) => format!("collection%3A{c}"),
-        ArchiveQuery::Creator(c) => format!("creator%3A{c}"),
-    }
-}
-
-/// Resolve band shorthand to the parsed_band value used in the tracks table.
-fn resolve_parsed_band(band: &str) -> String {
-    match band.to_lowercase().as_str() {
-        "gd" | "grateful dead" | "gratefuldead" => "Grateful Dead".to_string(),
-        "phish" => "Phish".to_string(),
-        "bts" | "built to spill" => "Built to Spill".to_string(),
-        _ => band.to_string(),
+fn query_clause(strategy: &ArchiveStrategy) -> String {
+    match strategy {
+        ArchiveStrategy::Collection(c) => format!("collection%3A{c}"),
+        ArchiveStrategy::Creator(c) => format!("creator%3A{c}"),
     }
 }
 
@@ -428,15 +402,14 @@ mod tests {
     }
 
     #[test]
-    fn test_resolve_query() {
-        assert!(matches!(resolve_query("gd").unwrap(), ArchiveQuery::Collection(c) if c == "GratefulDead"));
-        assert!(matches!(resolve_query("phish").unwrap(), ArchiveQuery::Creator(c) if c == "Phish"));
-        assert!(resolve_query("unknown_band").is_err());
+    fn test_query_cache_key() {
+        assert_eq!(query_cache_key(&ArchiveStrategy::Collection("GratefulDead".into())), "GratefulDead");
+        assert_eq!(query_cache_key(&ArchiveStrategy::Creator("Phish".into())), "Phish");
     }
 
     #[test]
-    fn test_resolve_parsed_band() {
-        assert_eq!(resolve_parsed_band("gd"), "Grateful Dead");
-        assert_eq!(resolve_parsed_band("phish"), "Phish");
+    fn test_query_clause() {
+        assert_eq!(query_clause(&ArchiveStrategy::Collection("GratefulDead".into())), "collection%3AGratefulDead");
+        assert_eq!(query_clause(&ArchiveStrategy::Creator("Phish".into())), "creator%3APhish");
     }
 }

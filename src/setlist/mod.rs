@@ -61,7 +61,7 @@ pub struct SetlistResult {
 /// - Case differences in BTS dirs (bts → BTS)
 /// - Prefix differences in Phish dirs (ph → phish)
 /// - Filename differences via disc/track position matching
-pub fn lookup_setlists(db: &Database, dry_run: bool) -> Result<SetlistResult> {
+pub fn lookup_setlists(db: &Database, dry_run: bool, rate_limit_ms: u64) -> Result<SetlistResult> {
     // Get all tracks missing titles (no parsed_title AND no tag title)
     let tracks = db.get_tracks_missing_titles()
         .context("Failed to query tracks missing titles")?;
@@ -162,8 +162,8 @@ pub fn lookup_setlists(db: &Database, dry_run: bool) -> Result<SetlistResult> {
 
         pb.inc(1);
 
-        // Rate limit: ~500ms between requests to be polite
-        thread::sleep(Duration::from_millis(500));
+        // Rate limit between requests to be polite
+        thread::sleep(Duration::from_millis(rate_limit_ms));
     }
 
     pb.finish_with_message("done");
@@ -274,48 +274,10 @@ fn extract_disc_track(filename: &str) -> Option<(u32, u32)> {
     None
 }
 
-/// Normalize a directory name into an archive.org identifier.
-///
-/// Handles:
-/// - GD 2-digit years: `gd69-04-22...` → `gd1969-04-22...`
-/// - BTS lowercase: `bts1999-03-08` → `BTS1999-03-08`
-/// - Phish short prefix: `ph1997-08-03...` → `phish1997-08-03...`
-fn normalize_archive_identifier(dir_name: &str) -> String {
-    // GD with 2-digit year: gd{YY}-... → gd19{YY}-...
-    let re_gd_2digit = Regex::new(r"^gd(\d{2})-(.*)$").unwrap();
-    if let Some(caps) = re_gd_2digit.captures(dir_name) {
-        let yy: u32 = caps[1].parse().unwrap_or(0);
-        let century = if yy <= 25 { "20" } else { "19" };
-        return format!("gd{century}{}-{}", &caps[1], &caps[2]);
-    }
-
-    // BTS lowercase → uppercase
-    if let Some(rest) = dir_name.strip_prefix("bts") {
-        if rest.starts_with(|c: char| c.is_ascii_digit()) {
-            return format!("BTS{rest}");
-        }
-    }
-
-    // Phish: ph{4-digit year} → phish{4-digit year}
-    if let Some(rest) = dir_name.strip_prefix("ph") {
-        if rest.starts_with(|c: char| c.is_ascii_digit()) {
-            // Check if it starts with a 4-digit year
-            if rest.len() >= 4 && rest[..4].chars().all(|c| c.is_ascii_digit()) {
-                return format!("phish{rest}");
-            }
-        }
-    }
-
-    // Date-only directories (like "2013-12-31") — can't determine band from dir alone
-    // These will be handled by the search fallback
-
-    dir_name.to_string()
-}
-
 /// Fetch metadata with identifier normalization and search fallback.
 fn fetch_metadata_with_fallbacks(dir_name: &str) -> Result<HashMap<String, String>> {
     // Step 1: Try the normalized identifier
-    let normalized = normalize_archive_identifier(dir_name);
+    let normalized = crate::bands::registry().normalize_identifier(dir_name);
 
     if normalized != dir_name {
         log::debug!("Normalized identifier: {dir_name} → {normalized}");
@@ -361,14 +323,9 @@ fn try_search_fallback(dir_name: &str) -> Result<Option<HashMap<String, String>>
     };
 
     // Determine the band/creator for the search
-    let creator = if dir_name.starts_with("gd") {
-        "GratefulDead"
-    } else if dir_name.starts_with("ph") {
-        "Phish"
-    } else if dir_name.to_lowercase().starts_with("bts") {
-        "BuiltToSpill"
-    } else {
-        return Ok(None);
+    let creator = match crate::bands::registry().resolve_search_creator(dir_name) {
+        Some(c) => c,
+        None => return Ok(None),
     };
 
     log::debug!("Search fallback: creator={creator} date={date}");
@@ -398,8 +355,8 @@ fn try_search_fallback(dir_name: &str) -> Result<Option<HashMap<String, String>>
     // Try each search result until we find one with titled audio files
     for doc in &docs {
         if let Some(identifier) = &doc.identifier {
-            // Rate limit between attempts
-            thread::sleep(Duration::from_millis(300));
+            // Rate limit between attempts (reuse same rate limit)
+            thread::sleep(Duration::from_millis(500));
 
             let map = fetch_archive_metadata(identifier)?;
             if !map.is_empty() {
@@ -488,63 +445,7 @@ mod tests {
         assert!(m.files.is_none());
     }
 
-    #[test]
-    fn test_normalize_gd_2digit_year() {
-        assert_eq!(
-            normalize_archive_identifier("gd69-04-22.sbd.miller.88466.sbeok.flac16"),
-            "gd1969-04-22.sbd.miller.88466.sbeok.flac16"
-        );
-        assert_eq!(
-            normalize_archive_identifier("gd82-08-08.sbd.wise.7690.shnf"),
-            "gd1982-08-08.sbd.wise.7690.shnf"
-        );
-    }
-
-    #[test]
-    fn test_normalize_gd_4digit_year_unchanged() {
-        // Already has 4-digit year — should pass through unchanged
-        assert_eq!(
-            normalize_archive_identifier("gd1972-04-14.sbd.miller.34552.flac"),
-            "gd1972-04-14.sbd.miller.34552.flac"
-        );
-    }
-
-    #[test]
-    fn test_normalize_bts_uppercase() {
-        assert_eq!(
-            normalize_archive_identifier("bts1999-03-08"),
-            "BTS1999-03-08"
-        );
-        assert_eq!(
-            normalize_archive_identifier("bts2012-02-25.nt4.flac16"),
-            "BTS2012-02-25.nt4.flac16"
-        );
-    }
-
-    #[test]
-    fn test_normalize_phish_prefix() {
-        assert_eq!(
-            normalize_archive_identifier("ph1997-11-16.692.shnf"),
-            "phish1997-11-16.692.shnf"
-        );
-        assert_eq!(
-            normalize_archive_identifier("ph2013-10-31dpa4022.flac16"),
-            "phish2013-10-31dpa4022.flac16"
-        );
-    }
-
-    #[test]
-    fn test_normalize_already_correct() {
-        // These should pass through unchanged
-        assert_eq!(
-            normalize_archive_identifier("phish2013-10-31"),
-            "phish2013-10-31"
-        );
-        assert_eq!(
-            normalize_archive_identifier("grateful_dead_live"),
-            "grateful_dead_live"
-        );
-    }
+    // Normalization tests are now in bands.rs (the normalize_identifier logic moved there).
 
     #[test]
     fn test_extract_disc_track_standard() {

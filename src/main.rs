@@ -69,8 +69,7 @@ impl ScoreName {
 enum Commands {
     /// Scan directories for audio files and add them to the library
     Scan {
-        /// Directories to scan
-        #[arg(required = true)]
+        /// Directories to scan (defaults to config file music_dirs)
         paths: Vec<String>,
 
         /// Force re-scan even if files haven't changed
@@ -80,8 +79,8 @@ enum Commands {
 
     /// Analyze audio files (extract features and compute scores)
     Analyze {
-        /// Number of parallel workers
-        #[arg(short = 'j', long, default_value = "2")]
+        /// Number of parallel workers (0 = auto-detect from config)
+        #[arg(short = 'j', long, default_value = "0")]
         jobs: usize,
 
         /// Force re-analysis of already-analyzed tracks
@@ -144,8 +143,8 @@ enum Commands {
 
     /// Compute track-to-track similarity from audio features
     Similarity {
-        /// Number of parallel workers
-        #[arg(short = 'j', long, default_value = "4")]
+        /// Number of parallel workers (0 = auto-detect from config)
+        #[arg(short = 'j', long, default_value = "0")]
         jobs: usize,
     },
 
@@ -227,7 +226,16 @@ fn main() -> Result<()> {
         .format_timestamp(None)
         .init();
 
-    let db_path = cli.db_path.unwrap_or_else(setbreak::config::default_db_path);
+    // Load config file (optional, defaults if missing)
+    let config = setbreak::config::AppConfig::load();
+
+    // Initialize global band registry (must happen before any band lookups)
+    setbreak::bands::init(&config.custom_bands);
+
+    // Resolve database path: CLI > config > XDG default
+    let db_path = cli.db_path
+        .or(config.db_path.clone())
+        .unwrap_or_else(setbreak::config::default_db_path);
     log::info!("Database: {}", db_path.display());
 
     let db = setbreak::db::Database::open(&db_path)
@@ -235,7 +243,20 @@ fn main() -> Result<()> {
 
     match cli.command {
         Commands::Scan { paths, force } => {
-            let result = setbreak::scanner::scan(&db, &paths, force)
+            // Resolve scan paths: CLI args > config music_dirs
+            let scan_paths = if !paths.is_empty() {
+                paths
+            } else if !config.music_dirs.is_empty() {
+                config.music_dirs.iter()
+                    .map(|p| p.to_string_lossy().to_string())
+                    .collect()
+            } else {
+                anyhow::bail!(
+                    "No directories to scan. Pass paths as arguments or set music_dirs in config."
+                );
+            };
+
+            let result = setbreak::scanner::scan(&db, &scan_paths, force)
                 .context("Scan failed")?;
             println!(
                 "Scan complete: {} scanned, {} new, {} updated, {} skipped, {} errors",
@@ -244,10 +265,11 @@ fn main() -> Result<()> {
         }
 
         Commands::Analyze { jobs, force, filter } => {
+            let workers = if jobs > 0 { jobs } else { config.resolve_workers() };
             let result = setbreak::analyzer::analyze_tracks(
                 &db,
                 force,
-                jobs,
+                workers,
                 filter.as_deref(),
             )
             .context("Analysis failed")?;
@@ -261,8 +283,9 @@ fn main() -> Result<()> {
             if dry_run {
                 println!("DRY RUN — no changes will be written to the database");
             }
-            let result = setbreak::setlist::lookup_setlists(&db, dry_run)
-                .context("Setlist lookup failed")?;
+            let result = setbreak::setlist::lookup_setlists(
+                &db, dry_run, config.archive.rate_limit_ms,
+            ).context("Setlist lookup failed")?;
             println!();
             println!(
                 "Setlist lookup complete: {} dirs fetched, {} titles updated, {} errors",
@@ -328,7 +351,8 @@ fn main() -> Result<()> {
         }
 
         Commands::Similarity { jobs } => {
-            let result = setbreak::similarity::compute_similarity(&db, jobs)
+            let workers = if jobs > 0 { jobs } else { config.resolve_workers() };
+            let result = setbreak::similarity::compute_similarity(&db, workers)
                 .context("Similarity computation failed")?;
             println!(
                 "Similarity complete: {} tracks processed, {} pairs stored",
@@ -439,6 +463,8 @@ fn main() -> Result<()> {
         Commands::Discover { band, refresh, year, limit } => {
             let result = setbreak::discovery::discover_missing_shows(
                 &db, &band, refresh, year.as_deref(), limit,
+                config.archive.cache_ttl_days,
+                config.archive.rate_limit_ms,
             ).context("Discovery failed")?;
 
             println!(
