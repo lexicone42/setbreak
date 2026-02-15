@@ -433,7 +433,9 @@ impl Database {
                 estimated_key, energy_shape, peak_energy, energy_variance,
                 tension_build_count, tension_release_count,
                 repetition_similarity, solo_section_count,
-                transition_count, segment_count
+                transition_count, segment_count,
+                spectral_flatness_std, pitch_confidence_mean,
+                mode_clarity, crest_factor, pitch_stability
              FROM analysis_results",
         )?;
         let rows = stmt
@@ -472,10 +474,15 @@ impl Database {
                     solo_section_count: row.get(30)?,
                     transition_count: row.get(31)?,
                     segment_count: row.get(32)?,
+                    spectral_flatness_std: row.get(33)?,
+                    pitch_confidence_mean: row.get(34)?,
+                    mode_clarity: row.get(35)?,
+                    crest_factor: row.get(36)?,
+                    pitch_stability: row.get(37)?,
                     // Fields not needed for scoring — set to None/defaults
                     sample_rate: None, channels: None, peak_amplitude: None,
                     spectral_rolloff_mean: None, spectral_rolloff_std: None,
-                    spectral_flatness_mean: None, spectral_flatness_std: None,
+                    spectral_flatness_mean: None,
                     spectral_bandwidth_mean: None, spectral_bandwidth_std: None,
                     zcr_mean: None, zcr_std: None,
                     sub_band_bass_mean: None, sub_band_bass_std: None,
@@ -496,11 +503,10 @@ impl Database {
                     mfcc_11_mean: None, mfcc_11_std: None,
                     mfcc_12_mean: None, mfcc_12_std: None,
                     rhythmic_complexity: None, mean_pitch: None,
-                    pitch_stability: None, dominant_pitch: None,
+                    dominant_pitch: None,
                     vibrato_presence: None, vibrato_rate: None,
-                    pitch_confidence_mean: None,
-                    true_peak_dbfs: None, crest_factor: None,
-                    chord_change_rate: None, mode_clarity: None,
+                    true_peak_dbfs: None,
+                    chord_change_rate: None,
                     time_sig_numerator: None, time_sig_denominator: None,
                     chroma_vector: None,
                     recording_quality_score: None, snr_db: None,

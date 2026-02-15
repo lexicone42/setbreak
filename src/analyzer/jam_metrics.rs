@@ -1,20 +1,25 @@
 use crate::db::models::NewAnalysis;
 use ferrous_waves::analysis::engine::AnalysisResult;
-use std::collections::HashSet;
 
 /// Compute all jam-specific derived scores (0-100) and attach them to the analysis.
 ///
-/// Takes both the flat NewAnalysis (for already-extracted scalars) and the full
-/// ferrous-waves AnalysisResult (for rich structural/harmonic/temporal data).
-pub fn compute_jam_scores(analysis: &mut NewAnalysis, result: &AnalysisResult) {
+/// All scores are computed from pre-extracted scalars in NewAnalysis, not from the
+/// raw AnalysisResult. This ensures `rescore` always matches initial scoring.
+pub fn compute_jam_scores(analysis: &mut NewAnalysis, _result: &AnalysisResult) {
+    compute_jam_scores_from_scalars(analysis);
+}
+
+/// Compute all jam scores from DB scalars only (no AnalysisResult needed).
+/// Used by the rescore command and delegated to by compute_jam_scores.
+pub fn compute_jam_scores_from_scalars(analysis: &mut NewAnalysis) {
     analysis.energy_score = Some(energy_score(analysis));
     analysis.intensity_score = Some(intensity_score(analysis));
     analysis.groove_score = Some(groove_score(analysis));
-    analysis.improvisation_score = Some(improvisation_score(analysis, result));
-    analysis.tightness_score = Some(tightness_score(analysis, result));
-    analysis.build_quality_score = Some(build_quality_score(analysis, result));
-    analysis.exploratory_score = Some(exploratory_score(analysis, result));
-    analysis.transcendence_score = Some(transcendence_score(analysis, result));
+    analysis.improvisation_score = Some(improvisation_score(analysis));
+    analysis.tightness_score = Some(tightness_score(analysis));
+    analysis.build_quality_score = Some(build_quality_score(analysis));
+    analysis.exploratory_score = Some(exploratory_score(analysis));
+    analysis.transcendence_score = Some(transcendence_score(analysis));
     analysis.valence_score = Some(valence_score(analysis));
     analysis.arousal_score = Some(arousal_score(analysis));
 }
@@ -113,9 +118,8 @@ fn groove_score(a: &NewAnalysis) -> f64 {
 
 // ── Improvisation Score (0-100) ───────────────────────────────────────
 // How much the music departs from repetitive structure.
-// Uses non-repetition, chord richness, timbral variety, and structural transitions
-// (replaces harmonic_complexity/temporal_complexity which have near-zero variance).
-fn improvisation_score(a: &NewAnalysis, _r: &AnalysisResult) -> f64 {
+// Uses non-repetition, chord richness, timbral variety, and structural transitions.
+fn improvisation_score(a: &NewAnalysis) -> f64 {
     // 1. Non-repetition (25 pts): low repetition similarity = improvised
     // Library range: 0.80-0.99, avg 0.90
     let rep_sim = a.repetition_similarity.unwrap_or(0.9);
@@ -145,199 +149,143 @@ fn improvisation_score(a: &NewAnalysis, _r: &AnalysisResult) -> f64 {
 
 // ── Tightness Score (0-100) ───────────────────────────────────────────
 // How well the band is locked in together.
-// High score = steady tempo, coherent segments, smooth spectral changes, strong beats.
-fn tightness_score(a: &NewAnalysis, r: &AnalysisResult) -> f64 {
-    // 1. Tempo stability (35 pts)
-    let stability = a.tempo_stability.unwrap_or(0.0);
-    let stability_contrib = stability.clamp(0.0, 1.0) * 35.0;
+// Uses pitch stability, flux consistency, beat structure, and tonal consistency.
+fn tightness_score(a: &NewAnalysis) -> f64 {
+    // 1. Pitch stability (25 pts): steady pitch = musicians locked in
+    // Library range: 0.33-0.91, avg 0.65
+    let pitch_stab = a.pitch_stability.unwrap_or(0.5);
+    let pitch_contrib = pitch_stab.clamp(0.0, 1.0) * 25.0;
 
-    // 2. Segment coherence (25 pts) — adjacent segments sound similar
-    let coherence = a.coherence_score.unwrap_or(0.0);
-    let coherence_contrib = coherence.clamp(0.0, 1.0) * 25.0;
-
-    // 3. Spectral smoothness (20 pts) — low flux std = controlled changes
-    // Invert: high flux std = chaotic = low tightness
+    // 2. Spectral flux consistency (25 pts): low flux CV = consistent energy
+    // Same concept as groove but measuring "tightness" not "groove feel"
+    let flux_mean = a.spectral_flux_mean.unwrap_or(0.0);
     let flux_std = a.spectral_flux_std.unwrap_or(0.0);
-    let smoothness = 1.0 - (flux_std / 50.0).clamp(0.0, 1.0);
-    let smooth_contrib = smoothness * 20.0;
+    let flux_cv = if flux_mean > 0.5 { flux_std / flux_mean } else { 2.0 };
+    let flux_score = (1.0 - (flux_cv - 0.3) / 1.2).clamp(0.0, 1.0);
+    let flux_contrib = flux_score * 25.0;
 
-    // 4. Beat strength (20 pts) — how many onsets fall near detected beats
-    // Proxy: ratio of beats to onsets. If beats ≈ onsets, the rhythm is well-defined.
-    // If onsets >> beats, there's a lot of un-metered activity.
-    let beats = r.temporal.beats.len() as f64;
-    let onsets = r.temporal.onsets.len().max(1) as f64;
+    // 3. Beat-onset ratio (25 pts): if most onsets align with beats, rhythm is tight
+    let beats = a.beat_count.unwrap_or(0) as f64;
+    let onsets = a.onset_count.unwrap_or(1).max(1) as f64;
     let beat_ratio = (beats / onsets).clamp(0.0, 1.0);
-    // Sweet spot: ratio 0.3-0.7 means structured but not trivial
     let beat_strength = if beat_ratio < 0.1 {
-        beat_ratio * 5.0 // Very few beats relative to onsets = loose
+        beat_ratio * 5.0
     } else if beat_ratio <= 0.8 {
         1.0
     } else {
-        // Almost all onsets are beats = might be a metronome-like simplicity
         0.8 + 0.2 * (1.0 - beat_ratio) / 0.2
     };
-    let beat_contrib = beat_strength.clamp(0.0, 1.0) * 20.0;
+    let beat_contrib = beat_strength.clamp(0.0, 1.0) * 25.0;
 
-    (stability_contrib + coherence_contrib + smooth_contrib + beat_contrib).clamp(0.0, 100.0)
+    // 4. Tonal consistency (25 pts): low spectral flatness std = consistent character
+    // Library range: 0.05-0.26, avg 0.09
+    let flat_std = a.spectral_flatness_std.unwrap_or(0.15);
+    let tonal_score = (1.0 - (flat_std - 0.04) / 0.22).clamp(0.0, 1.0);
+    let tonal_contrib = tonal_score * 25.0;
+
+    (pitch_contrib + flux_contrib + beat_contrib + tonal_contrib).clamp(0.0, 100.0)
 }
 
 // ── Build Quality Score (0-100) ───────────────────────────────────────
-// How well the music builds to peaks — tension/release arcs.
-fn build_quality_score(a: &NewAnalysis, r: &AnalysisResult) -> f64 {
-    // 1. Energy profile shape (30 pts)
-    // Shapes that suggest a build: Increasing, Peak, Complex
-    let shape = format!("{:?}", r.segments.patterns.energy_profile.shape);
-    let shape_score = match shape.as_str() {
-        "Peak" => 1.0,          // Classic build-to-climax
-        "Increasing" => 0.8,    // Steady build
-        "Complex" => 0.7,       // Multi-peaked, interesting dynamics
-        "Oscillating" => 0.5,   // Rising and falling, some build quality
-        "Valley" => 0.3,        // Inverse build
-        "Decreasing" => 0.2,    // Winding down
-        "Flat" => 0.1,          // No dynamics
-        _ => 0.4,
-    };
-    let shape_contrib = shape_score * 30.0;
+// How well the music builds to peaks — dynamic arcs and tension.
+// Uses crest factor, loudness range, energy variance, and transition density.
+fn build_quality_score(a: &NewAnalysis) -> f64 {
+    let duration = a.duration.unwrap_or(1.0).max(1.0);
 
-    // 2. Tension build/release ratio (25 pts)
-    // Good builds have tension build-ups followed by releases
-    let builds = a.tension_build_count.unwrap_or(0) as f64;
-    let releases = a.tension_release_count.unwrap_or(0) as f64;
-    let tension_events = builds + releases;
-    // Having both builds AND releases is key
-    let tension_score = if tension_events < 1.0 {
-        0.0 // No tension dynamics at all
-    } else {
-        let balance = (builds.min(releases) * 2.0) / tension_events; // 1.0 when equal
-        let count_factor = (tension_events / 6.0).clamp(0.0, 1.0); // More events = more dynamic
-        balance * 0.6 + count_factor * 0.4
-    };
-    let tension_contrib = tension_score * 25.0;
+    // 1. Crest factor (30 pts): peak-to-RMS ratio = dynamic peak character
+    // Library range: 3.15-35.6, avg 9.56
+    // Higher crest = sharper dynamic peaks = more build potential
+    let crest = a.crest_factor.unwrap_or(5.0);
+    let crest_norm = ((crest - 3.0) / 25.0).clamp(0.0, 1.0);
+    let crest_contrib = crest_norm * 30.0;
 
-    // 3. Energy variance (20 pts) — needs dynamic range to have a build
+    // 2. Loudness range (25 pts): wide LRA = dynamic builds
+    // Library range: 1.1-33, avg 10.7
+    let lra = a.loudness_range.unwrap_or(0.0);
+    let lra_norm = ((lra - 1.0) / 20.0).clamp(0.0, 1.0);
+    let lra_contrib = lra_norm * 25.0;
+
+    // 3. Energy variance (20 pts): variation in energy = dynamic movement
+    // Library range: 0.00001-0.014, avg 0.0017
     let e_var = a.energy_variance.unwrap_or(0.0);
-    let var_norm = (e_var / 0.1).clamp(0.0, 1.0); // Typical variance 0-0.1 (energy is 0-1)
+    let var_norm = (e_var / 0.01).clamp(0.0, 1.0);
     let var_contrib = var_norm * 20.0;
 
-    // 4. Transition smoothness (15 pts)
-    let transitions = &r.segments.transitions;
-    let smooth_ratio = if transitions.is_empty() {
-        0.5 // No transitions detected, neutral
-    } else {
-        let smooth_count = transitions.iter().filter(|t| {
-            let tt = format!("{:?}", t.transition_type);
-            tt == "Smooth" || tt == "Crossfade" || tt == "BuildUp"
-        }).count() as f64;
-        smooth_count / transitions.len() as f64
-    };
-    let transition_contrib = smooth_ratio * 15.0;
+    // 4. Transition density (25 pts): transitions per minute = structural dynamism
+    // Library range: 0-27/min, avg varies
+    let transitions = a.transition_count.unwrap_or(0) as f64;
+    let trans_per_min = transitions / (duration / 60.0);
+    let trans_norm = (trans_per_min / 5.0).clamp(0.0, 1.0);
+    let trans_contrib = trans_norm * 25.0;
 
-    // 5. Structural progression (10 pts)
-    // Bonus if there's an identifiable intro → build → peak structure
-    let has_intro = r.segments.structure.iter().any(|s| format!("{:?}", s.section_type) == "Intro");
-    let has_solo = r.segments.structure.iter().any(|s| {
-        let t = format!("{:?}", s.section_type);
-        t == "Solo" || t == "Instrumental"
-    });
-    let has_outro = r.segments.structure.iter().any(|s| format!("{:?}", s.section_type) == "Outro");
-    let structure_score = (has_intro as u8 + has_solo as u8 + has_outro as u8) as f64 / 3.0;
-    let structure_contrib = structure_score * 10.0;
-
-    (shape_contrib + tension_contrib + var_contrib + transition_contrib + structure_contrib).clamp(0.0, 100.0)
+    (crest_contrib + lra_contrib + var_contrib + trans_contrib).clamp(0.0, 100.0)
 }
 
 // ── Exploratory Score (0-100) ─────────────────────────────────────────
-// How much musical territory is covered — harmonic, timbral, structural.
-fn exploratory_score(a: &NewAnalysis, r: &AnalysisResult) -> f64 {
-    // 1. Pitch range breadth (20 pts)
-    let range = a.pitch_range_high.unwrap_or(0.0) - a.pitch_range_low.unwrap_or(0.0);
-    let pitch_norm = (range / 2000.0).clamp(0.0, 1.0);
-    let pitch_contrib = pitch_norm * 20.0;
+// How much musical territory is covered — timbral, textural, structural.
+// Uses spectral flatness variety, pitch confidence, transition density, mode ambiguity.
+fn exploratory_score(a: &NewAnalysis) -> f64 {
+    let duration = a.duration.unwrap_or(1.0).max(1.0);
 
-    // 2. Chord variety (20 pts) — unique chords / root notes
-    let unique_chords = match &r.musical.chord_progression {
-        Some(prog) => {
-            let set: HashSet<&str> = prog.chords.iter().map(|c| c.chord.as_str()).collect();
-            set.len() as f64
-        }
-        None => 0.0,
-    };
-    let chord_norm = ((unique_chords - 1.0) / 10.0).clamp(0.0, 1.0);
-    let chord_contrib = chord_norm * 20.0;
+    // 1. Spectral flatness variety (25 pts): variation between tonal and noisy moments
+    // Library range: 0.05-0.26, avg 0.09
+    let flat_std = a.spectral_flatness_std.unwrap_or(0.05);
+    let flat_norm = ((flat_std - 0.04) / 0.22).clamp(0.0, 1.0);
+    let flat_contrib = flat_norm * 25.0;
 
-    // 3. Key ambiguity (20 pts) — low confidence + close alternatives = exploring
-    let key_conf = a.key_confidence.unwrap_or(1.0);
-    let alt_count = a.key_alternatives_count.unwrap_or(0) as f64;
-    // Low confidence + many alternatives = high exploration
-    let key_ambiguity = (1.0 - key_conf) * 0.5 + (alt_count / 6.0).clamp(0.0, 0.5);
-    let key_contrib = key_ambiguity.clamp(0.0, 1.0) * 20.0;
+    // 2. Pitch confidence inverse (25 pts): uncertain pitch = exploring tonal space
+    // Library range: 0.028-0.845, avg 0.58
+    let pitch_conf = a.pitch_confidence_mean.unwrap_or(0.5);
+    let pitch_explore = (1.0 - pitch_conf).clamp(0.0, 1.0);
+    let pitch_contrib = pitch_explore * 25.0;
 
-    // 4. Harmonic complexity (20 pts)
-    let harm = a.harmonic_complexity.unwrap_or(0.0);
-    let harm_contrib = harm.clamp(0.0, 1.0) * 20.0;
+    // 3. Transition density (25 pts): transitions per minute
+    // Library range: 0-27/min
+    let transitions = a.transition_count.unwrap_or(0) as f64;
+    let trans_per_min = transitions / (duration / 60.0);
+    let trans_norm = (trans_per_min / 5.0).clamp(0.0, 1.0);
+    let trans_contrib = trans_norm * 25.0;
 
-    // 5. Structural transitions (20 pts) — more transitions = more exploration
-    let transition_count = r.segments.transitions.len() as f64;
-    // Count of key changes and tempo changes specifically
-    let modulation_count = r.segments.transitions.iter().filter(|t| {
-        let tt = format!("{:?}", t.transition_type);
-        tt == "KeyChange" || tt == "TempoChange"
-    }).count() as f64;
-    // General transitions: 0-10 range
-    let trans_norm = (transition_count / 10.0).clamp(0.0, 0.5);
-    // Key/tempo changes are extra exploratory
-    let mod_norm = (modulation_count / 3.0).clamp(0.0, 0.5);
-    let trans_contrib = (trans_norm + mod_norm) * 20.0;
+    // 4. Mode ambiguity (25 pts): unclear mode = harmonically adventurous
+    // Library range: 0.064-0.22, avg 0.131 (lower = more ambiguous)
+    let mode_clar = a.mode_clarity.unwrap_or(0.15);
+    let mode_ambig = (1.0 - (mode_clar - 0.05) / 0.20).clamp(0.0, 1.0);
+    let mode_contrib = mode_ambig * 25.0;
 
-    (pitch_contrib + chord_contrib + key_contrib + harm_contrib + trans_contrib).clamp(0.0, 100.0)
+    (flat_contrib + pitch_contrib + trans_contrib + mode_contrib).clamp(0.0, 100.0)
 }
 
 // ── Transcendence Score (0-100) ───────────────────────────────────────
-// The "peak experience" composite — the moments where everything comes together.
-// Sustained high energy + groove + harmonic richness + tension peaks.
-fn transcendence_score(a: &NewAnalysis, r: &AnalysisResult) -> f64 {
-    // 1. Peak energy magnitude (30 pts) — how high do the peaks go?
-    let peak_e = r.segments.patterns.energy_profile.peaks.iter()
-        .map(|p| p.1 as f64)
-        .fold(0.0f64, f64::max);
-    let avg_e = r.segments.patterns.energy_profile.average as f64;
-    // Peak relative to average — transcendence needs standout moments
-    let peak_ratio = if avg_e > 0.001 { peak_e / avg_e } else { 1.0 };
-    // ratio of 2.0+ = strong peaks
-    let peak_norm = ((peak_ratio - 1.0) / 2.0).clamp(0.0, 1.0);
-    let peak_contrib = peak_norm * 30.0;
+// The "peak experience" composite — everything comes together.
+// Uses peak intensity, crest factor, groove×energy synergy, spectral richness.
+fn transcendence_score(a: &NewAnalysis) -> f64 {
+    // 1. Peak intensity ratio (25 pts): how far peaks exceed average
+    // peak_energy range: 0-0.38, energy_level range: 0-0.51
+    let peak_e = a.peak_energy.unwrap_or(0.0);
+    let avg_e = a.energy_level.unwrap_or(0.001).max(0.001);
+    let peak_ratio = peak_e / avg_e;
+    let peak_norm = ((peak_ratio - 0.05) / 0.8).clamp(0.0, 1.0);
+    let peak_contrib = peak_norm * 25.0;
 
-    // 2. Sustained high-energy sections (20 pts)
-    // Count segments with above-average energy
-    let total_segs = r.segments.segments.len().max(1) as f64;
-    let high_energy_segs = r.segments.segments.iter()
-        .filter(|s| s.energy as f64 > avg_e * 1.2)
-        .count() as f64;
-    let sustained_ratio = high_energy_segs / total_segs;
-    let sustained_contrib = sustained_ratio.clamp(0.0, 1.0) * 20.0;
+    // 2. Dynamic peak character (25 pts): crest factor
+    // Library range: 3.15-35.6, avg 9.56
+    let crest = a.crest_factor.unwrap_or(5.0);
+    let crest_norm = ((crest - 3.0) / 25.0).clamp(0.0, 1.0);
+    let crest_contrib = crest_norm * 25.0;
 
-    // 3. Peak tension reached (20 pts)
-    let max_tension = r.segments.patterns.tension_profile.iter()
-        .map(|t| t.tension as f64)
-        .fold(0.0f64, f64::max);
-    let tension_contrib = max_tension.clamp(0.0, 1.0) * 20.0;
-
-    // 4. Groove during high energy (15 pts)
-    // If tempo stability is high AND we have energy, the groove is locked in
+    // 3. Groove × Energy synergy (30 pts): transcendence needs both
     let groove = groove_score(a);
     let energy = energy_score(a);
-    // Both need to be high for this to matter
     let groove_energy = (groove / 100.0) * (energy / 100.0);
-    let groove_contrib = groove_energy.sqrt() * 15.0; // sqrt to not penalize too harshly
+    let synergy_contrib = groove_energy.sqrt() * 30.0;
 
-    // 5. Harmonic richness during peaks (15 pts)
-    let harm = a.harmonic_complexity.unwrap_or(0.0);
-    let tonality = a.tonality.unwrap_or(0.0);
-    // Strong tonal center + complex harmonics = rich
-    let richness = harm * (0.3 + 0.7 * tonality);
-    let richness_contrib = richness.clamp(0.0, 1.0) * 15.0;
+    // 4. Spectral richness (20 pts): high flux = lots of spectral activity
+    // Library range: 0.73-69, avg 23
+    let flux = a.spectral_flux_mean.unwrap_or(0.0);
+    let flux_norm = (flux / 50.0).clamp(0.0, 1.0);
+    let flux_contrib = flux_norm * 20.0;
 
-    (peak_contrib + sustained_contrib + tension_contrib + groove_contrib + richness_contrib).clamp(0.0, 100.0)
+    (peak_contrib + crest_contrib + synergy_contrib + flux_contrib).clamp(0.0, 100.0)
 }
 
 // ── Valence Score (0-100) ──────────────────────────────────────────────
@@ -394,186 +342,6 @@ fn arousal_score(a: &NewAnalysis) -> f64 {
     let lufs_contrib = lufs_norm * 25.0;
 
     (energy_contrib + tempo_contrib + flux_contrib + lufs_contrib).clamp(0.0, 100.0)
-}
-
-// ── Scalar-only score functions (for rescore from DB without AnalysisResult) ──
-
-/// Compute all jam scores from DB scalars only (no AnalysisResult needed).
-/// Used by the rescore command to recompute scores without re-analyzing audio.
-pub fn compute_jam_scores_from_scalars(analysis: &mut NewAnalysis) {
-    analysis.energy_score = Some(energy_score(analysis));
-    analysis.intensity_score = Some(intensity_score(analysis));
-    analysis.groove_score = Some(groove_score(analysis));
-    analysis.improvisation_score = Some(improvisation_score_scalar(analysis));
-    analysis.tightness_score = Some(tightness_score_scalar(analysis));
-    analysis.build_quality_score = Some(build_quality_score_scalar(analysis));
-    analysis.exploratory_score = Some(exploratory_score_scalar(analysis));
-    analysis.transcendence_score = Some(transcendence_score_scalar(analysis));
-    analysis.valence_score = Some(valence_score(analysis));
-    analysis.arousal_score = Some(arousal_score(analysis));
-}
-
-/// Improvisation from scalars only (identical logic — AnalysisResult was already unused).
-fn improvisation_score_scalar(a: &NewAnalysis) -> f64 {
-    let rep_sim = a.repetition_similarity.unwrap_or(0.9);
-    let non_rep = (1.0 - (rep_sim - 0.75) / 0.25).clamp(0.0, 1.0);
-    let non_rep_contrib = non_rep * 25.0;
-
-    let chords = a.chord_count.unwrap_or(0) as f64;
-    let chord_norm = ((chords - 3.0) / 18.0).clamp(0.0, 1.0);
-    let chord_contrib = chord_norm * 25.0;
-
-    let centroid_std = a.spectral_centroid_std.unwrap_or(500.0);
-    let timbre_variety = ((centroid_std - 400.0) / 2500.0).clamp(0.0, 1.0);
-    let timbre_contrib = timbre_variety * 25.0;
-
-    let transitions = a.transition_count.unwrap_or(0) as f64;
-    let trans_norm = (transitions / 30.0).clamp(0.0, 1.0);
-    let trans_contrib = trans_norm * 25.0;
-
-    (non_rep_contrib + chord_contrib + timbre_contrib + trans_contrib).clamp(0.0, 100.0)
-}
-
-/// Tightness from scalars only (beat/onset counts from DB match vector lengths).
-fn tightness_score_scalar(a: &NewAnalysis) -> f64 {
-    let stability = a.tempo_stability.unwrap_or(0.0);
-    let stability_contrib = stability.clamp(0.0, 1.0) * 35.0;
-
-    let coherence = a.coherence_score.unwrap_or(0.0);
-    let coherence_contrib = coherence.clamp(0.0, 1.0) * 25.0;
-
-    let flux_std = a.spectral_flux_std.unwrap_or(0.0);
-    let smoothness = 1.0 - (flux_std / 50.0).clamp(0.0, 1.0);
-    let smooth_contrib = smoothness * 20.0;
-
-    let beats = a.beat_count.unwrap_or(0) as f64;
-    let onsets = a.onset_count.unwrap_or(1).max(1) as f64;
-    let beat_ratio = (beats / onsets).clamp(0.0, 1.0);
-    let beat_strength = if beat_ratio < 0.1 {
-        beat_ratio * 5.0
-    } else if beat_ratio <= 0.8 {
-        1.0
-    } else {
-        0.8 + 0.2 * (1.0 - beat_ratio) / 0.2
-    };
-    let beat_contrib = beat_strength.clamp(0.0, 1.0) * 20.0;
-
-    (stability_contrib + coherence_contrib + smooth_contrib + beat_contrib).clamp(0.0, 100.0)
-}
-
-/// Build quality from scalars only.
-/// Approximates transition-type breakdown and structural progression from stored counts.
-fn build_quality_score_scalar(a: &NewAnalysis) -> f64 {
-    // 1. Energy profile shape (30 pts)
-    let shape_score = match a.energy_shape.as_deref() {
-        Some("Peak") => 1.0,
-        Some("Increasing") => 0.8,
-        Some("Complex") => 0.7,
-        Some("Oscillating") => 0.5,
-        Some("Valley") => 0.3,
-        Some("Decreasing") => 0.2,
-        Some("Flat") => 0.1,
-        _ => 0.4,
-    };
-    let shape_contrib = shape_score * 30.0;
-
-    // 2. Tension build/release ratio (25 pts)
-    let builds = a.tension_build_count.unwrap_or(0) as f64;
-    let releases = a.tension_release_count.unwrap_or(0) as f64;
-    let tension_events = builds + releases;
-    let tension_score = if tension_events < 1.0 {
-        0.0
-    } else {
-        let balance = (builds.min(releases) * 2.0) / tension_events;
-        let count_factor = (tension_events / 6.0).clamp(0.0, 1.0);
-        balance * 0.6 + count_factor * 0.4
-    };
-    let tension_contrib = tension_score * 25.0;
-
-    // 3. Energy variance (20 pts)
-    let e_var = a.energy_variance.unwrap_or(0.0);
-    let var_norm = (e_var / 0.1).clamp(0.0, 1.0);
-    let var_contrib = var_norm * 20.0;
-
-    // 4. Transition presence (15 pts) — neutral ratio without type info
-    let trans = a.transition_count.unwrap_or(0) as f64;
-    let trans_score = (trans / 10.0).clamp(0.0, 1.0) * 0.5; // Neutral smooth ratio
-    let transition_contrib = trans_score * 15.0;
-
-    // 5. Solo sections as structural proxy (10 pts)
-    let has_solo = a.solo_section_count.unwrap_or(0) > 0;
-    let structure_score = if has_solo { 0.33 } else { 0.0 };
-    let structure_contrib = structure_score * 10.0;
-
-    (shape_contrib + tension_contrib + var_contrib + transition_contrib + structure_contrib).clamp(0.0, 100.0)
-}
-
-/// Exploratory from scalars only.
-/// Uses chord_count and transition_count directly instead of iterating rich data.
-fn exploratory_score_scalar(a: &NewAnalysis) -> f64 {
-    // 1. Pitch range breadth (20 pts)
-    let range = a.pitch_range_high.unwrap_or(0.0) - a.pitch_range_low.unwrap_or(0.0);
-    let pitch_norm = (range / 2000.0).clamp(0.0, 1.0);
-    let pitch_contrib = pitch_norm * 20.0;
-
-    // 2. Chord variety (20 pts) — use stored chord_count
-    let chords = a.chord_count.unwrap_or(0) as f64;
-    let chord_norm = ((chords - 1.0) / 10.0).clamp(0.0, 1.0);
-    let chord_contrib = chord_norm * 20.0;
-
-    // 3. Key ambiguity (20 pts)
-    let key_conf = a.key_confidence.unwrap_or(1.0);
-    let alt_count = a.key_alternatives_count.unwrap_or(0) as f64;
-    let key_ambiguity = (1.0 - key_conf) * 0.5 + (alt_count / 6.0).clamp(0.0, 0.5);
-    let key_contrib = key_ambiguity.clamp(0.0, 1.0) * 20.0;
-
-    // 4. Harmonic complexity (20 pts)
-    let harm = a.harmonic_complexity.unwrap_or(0.0);
-    let harm_contrib = harm.clamp(0.0, 1.0) * 20.0;
-
-    // 5. Structural transitions (20 pts) — use total count
-    let transition_count = a.transition_count.unwrap_or(0) as f64;
-    let trans_norm = (transition_count / 10.0).clamp(0.0, 1.0);
-    let trans_contrib = trans_norm * 20.0;
-
-    (pitch_contrib + chord_contrib + key_contrib + harm_contrib + trans_contrib).clamp(0.0, 100.0)
-}
-
-/// Transcendence from scalars only.
-/// Uses peak_energy, energy_level, energy_variance as proxies for rich segment data.
-fn transcendence_score_scalar(a: &NewAnalysis) -> f64 {
-    // 1. Peak energy magnitude (30 pts)
-    let peak_e = a.peak_energy.unwrap_or(0.0);
-    let avg_e = a.energy_level.unwrap_or(0.001).max(0.001);
-    let peak_ratio = peak_e / avg_e;
-    let peak_norm = ((peak_ratio - 1.0) / 2.0).clamp(0.0, 1.0);
-    let peak_contrib = peak_norm * 30.0;
-
-    // 2. Sustained high-energy (20 pts) — energy variance as proxy
-    // Higher variance means more dynamic range, suggesting sustained peaks exist
-    let e_var = a.energy_variance.unwrap_or(0.0);
-    let sustained_proxy = (e_var / 0.05).clamp(0.0, 1.0);
-    let sustained_contrib = sustained_proxy * 20.0;
-
-    // 3. Peak tension (20 pts) — presence of tension events as proxy
-    let builds = a.tension_build_count.unwrap_or(0) as f64;
-    let releases = a.tension_release_count.unwrap_or(0) as f64;
-    let tension_activity = ((builds + releases) / 6.0).clamp(0.0, 1.0);
-    let tension_contrib = tension_activity * 20.0;
-
-    // 4. Groove during high energy (15 pts)
-    let groove = groove_score(a);
-    let energy = energy_score(a);
-    let groove_energy = (groove / 100.0) * (energy / 100.0);
-    let groove_contrib = groove_energy.sqrt() * 15.0;
-
-    // 5. Harmonic richness (15 pts)
-    let harm = a.harmonic_complexity.unwrap_or(0.0);
-    let tonality = a.tonality.unwrap_or(0.0);
-    let richness = harm * (0.3 + 0.7 * tonality);
-    let richness_contrib = richness.clamp(0.0, 1.0) * 15.0;
-
-    (peak_contrib + sustained_contrib + tension_contrib + groove_contrib + richness_contrib).clamp(0.0, 100.0)
 }
 
 #[cfg(test)]
@@ -679,25 +447,31 @@ mod tests {
     #[test]
     fn test_all_scores_in_range() {
         let mut a = base_analysis();
-        // Energy/intensity/groove only need NewAnalysis
-        a.energy_score = Some(energy_score(&a));
-        a.intensity_score = Some(intensity_score(&a));
-        a.groove_score = Some(groove_score(&a));
+        compute_jam_scores_from_scalars(&mut a);
 
-        assert!((0.0..=100.0).contains(&a.energy_score.unwrap()), "energy={}", a.energy_score.unwrap());
-        assert!((0.0..=100.0).contains(&a.intensity_score.unwrap()), "intensity={}", a.intensity_score.unwrap());
-        assert!((0.0..=100.0).contains(&a.groove_score.unwrap()), "groove={}", a.groove_score.unwrap());
+        for (name, val) in [
+            ("energy", a.energy_score), ("intensity", a.intensity_score),
+            ("groove", a.groove_score), ("improvisation", a.improvisation_score),
+            ("tightness", a.tightness_score), ("build_quality", a.build_quality_score),
+            ("exploratory", a.exploratory_score), ("transcendence", a.transcendence_score),
+            ("valence", a.valence_score), ("arousal", a.arousal_score),
+        ] {
+            let v = val.unwrap();
+            assert!((0.0..=100.0).contains(&v), "{name}={v}");
+        }
     }
 
     #[test]
     fn test_silence_scores_low() {
         let mut a = base_analysis();
+        // Zero all signal-dependent features
         a.rms_level = Some(0.0);
         a.lufs_integrated = Some(-60.0);
         a.spectral_centroid_mean = Some(0.0);
         a.spectral_centroid_std = Some(0.0);
         a.spectral_flux_mean = Some(0.0);
         a.spectral_flux_std = Some(0.0);
+        a.spectral_flatness_std = Some(0.0);
         a.dynamic_range = Some(0.0);
         a.loudness_range = Some(0.0);
         a.tempo_stability = Some(0.0);
@@ -707,9 +481,15 @@ mod tests {
         a.chord_count = Some(0);
         a.transition_count = Some(0);
         a.repetition_similarity = Some(1.0);
+        a.crest_factor = Some(1.0);
+        a.energy_variance = Some(0.0);
+        a.energy_level = Some(0.0);
+        a.peak_energy = Some(0.0);
+        a.pitch_stability = Some(0.0);
+        a.pitch_confidence_mean = Some(0.0);
 
-        assert!(energy_score(&a) < 10.0);
-        assert!(intensity_score(&a) < 10.0);
-        assert!(groove_score(&a) < 10.0);
+        assert!(energy_score(&a) < 10.0, "energy={}", energy_score(&a));
+        assert!(intensity_score(&a) < 10.0, "intensity={}", intensity_score(&a));
+        assert!(groove_score(&a) < 10.0, "groove={}", groove_score(&a));
     }
 }
