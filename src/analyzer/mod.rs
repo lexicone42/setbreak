@@ -137,13 +137,13 @@ pub fn analyze_tracks(
                 .map(|track| {
                     let result = analyze_single_track(track);
                     pb.inc(1);
-                    result
+                    (track.file_path.clone(), result)
                 })
                 .collect()
         });
 
         // Write this chunk's results to DB immediately
-        for result in results {
+        for (file_path, result) in results {
             match result {
                 Ok(ta) => {
                     match db.store_full_analysis(
@@ -156,8 +156,8 @@ pub fn analyze_tracks(
                         Ok(()) => analyzed += 1,
                         Err(e) => {
                             log::error!(
-                                "DB error storing analysis for track {}: {}",
-                                ta.track_id,
+                                "DB error storing analysis for {}: {}",
+                                file_path,
                                 e
                             );
                             failed += 1;
@@ -165,7 +165,7 @@ pub fn analyze_tracks(
                     }
                 }
                 Err(e) => {
-                    log::warn!("Analysis failed: {}", e);
+                    log::warn!("Analysis failed for {}: {}", file_path, e);
                     failed += 1;
                 }
             }

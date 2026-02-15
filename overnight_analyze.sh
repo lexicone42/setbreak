@@ -8,7 +8,7 @@ set -euo pipefail
 SETBREAK="./target/release/setbreak"
 DB_PATH="$HOME/.local/share/setbreak/setbreak.db"
 LOG_DIR="/datar/workspace/claude_code_experiments/setbreak/logs"
-JOBS=4  # 4 of 6 cores — leaves headroom for system
+JOBS=3  # 3 of 6 cores — leaving room for the system
 MAX_HOURS=8
 
 mkdir -p "$LOG_DIR"
@@ -41,8 +41,8 @@ START_TIME=$SECONDS
 
 # Run analysis — the progress bar goes to stderr (tee captures both)
 # The --verbose flag gives us INFO-level logging of individual track results
-# --force: re-analyze all tracks to populate v4 features (bandwidth, sub-band, valence/arousal)
-"$SETBREAK" analyze -j "$JOBS" --db-path "$DB_PATH" --force -v 2>&1
+# Analyze remaining unanalyzed tracks (resumable — skips already-analyzed)
+"$SETBREAK" analyze -j "$JOBS" --db-path "$DB_PATH" -v 2>&1
 
 EXIT_CODE=$?
 ELAPSED=$(( SECONDS - START_TIME ))
