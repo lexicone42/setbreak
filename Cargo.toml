@@ -36,6 +36,9 @@ toml = "0.8"
 # Directory traversal
 walkdir = "2"
 
+# Native FLAC decoding
+claxon = "0.4"
+
 # Errors
 anyhow = "1"
 thiserror = "2"

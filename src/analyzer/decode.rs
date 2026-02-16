@@ -1,3 +1,4 @@
+use ferrous_waves::audio::{AudioBuffer, AudioFormat};
 use ferrous_waves::AudioFile;
 use std::path::Path;
 use std::process::Command;
@@ -10,6 +11,8 @@ pub enum DecodeError {
     UnsupportedFormat(String),
     #[error("ferrous-waves decode error: {0}")]
     FerrousWaves(String),
+    #[error("FLAC decode error: {0}")]
+    Flac(String),
     #[error("ffmpeg not found — required for SHN files")]
     FfmpegNotFound,
     #[error("ffmpeg decode error: {0}")]
@@ -18,8 +21,10 @@ pub enum DecodeError {
     Io(#[from] std::io::Error),
 }
 
-/// Load an audio file, using ferrous-waves for standard formats
-/// and ffmpeg subprocess for SHN, FLAC, and other formats it can't handle natively.
+/// Load an audio file, using the best available decoder for each format:
+/// - WAV/MP3: ferrous-waves (symphonia)
+/// - FLAC: claxon (native Rust, no external deps)
+/// - SHN/OGG/etc: ffmpeg subprocess
 pub fn load_audio(path: &Path) -> Result<AudioFile, DecodeError> {
     let ext = path
         .extension()
@@ -28,17 +33,43 @@ pub fn load_audio(path: &Path) -> Result<AudioFile, DecodeError> {
         .to_lowercase();
 
     match ext.as_str() {
-        // ferrous-waves handles WAV and MP3 natively
         "wav" | "mp3" => {
             AudioFile::load(path).map_err(|e| DecodeError::FerrousWaves(e.to_string()))
         }
-        // Everything else (SHN, FLAC, OGG, etc.) goes through ffmpeg → WAV
+        "flac" => load_flac_native(path),
         _ => load_via_ffmpeg(path),
     }
 }
 
+/// Decode a FLAC file natively using claxon, bypassing ferrous-waves's symphonia
+/// decoder (which fails with "Unsupported sample format" on FLAC).
+fn load_flac_native(path: &Path) -> Result<AudioFile, DecodeError> {
+    let mut reader = claxon::FlacReader::open(path)
+        .map_err(|e| DecodeError::Flac(format!("{}: {}", path.display(), e)))?;
+
+    let info = reader.streaminfo();
+    let sample_rate = info.sample_rate;
+    let channels = info.channels as usize;
+    let bits_per_sample = info.bits_per_sample;
+    let scale = 2_f32.powi(bits_per_sample as i32 - 1);
+
+    let samples_i32: Vec<i32> = reader
+        .samples()
+        .collect::<Result<Vec<i32>, _>>()
+        .map_err(|e| DecodeError::Flac(format!("{}: {}", path.display(), e)))?;
+
+    let samples_f32: Vec<f32> = samples_i32.iter().map(|&s| s as f32 / scale).collect();
+
+    let buffer = AudioBuffer::new(samples_f32, sample_rate, channels);
+    Ok(AudioFile {
+        buffer,
+        format: AudioFormat::from_path(path),
+        path: path.display().to_string(),
+    })
+}
+
 /// Decode an audio file by shelling out to ffmpeg and converting to WAV in a temp file.
-/// Works with any format ffmpeg supports (SHN, FLAC, OGG, AIFF, etc.).
+/// Works with any format ffmpeg supports (SHN, OGG, AIFF, etc.).
 fn load_via_ffmpeg(path: &Path) -> Result<AudioFile, DecodeError> {
     // Check ffmpeg is available
     let ffmpeg_check = Command::new("ffmpeg").arg("-version").output();
