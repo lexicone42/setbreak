@@ -19,7 +19,7 @@ pub enum DecodeError {
 }
 
 /// Load an audio file, using ferrous-waves for standard formats
-/// and ffmpeg subprocess for SHN.
+/// and ffmpeg subprocess for SHN, FLAC, and other formats it can't handle natively.
 pub fn load_audio(path: &Path) -> Result<AudioFile, DecodeError> {
     let ext = path
         .extension()
@@ -27,15 +27,19 @@ pub fn load_audio(path: &Path) -> Result<AudioFile, DecodeError> {
         .unwrap_or("")
         .to_lowercase();
 
-    if ext == "shn" {
-        load_shn_via_ffmpeg(path)
-    } else {
-        AudioFile::load(path).map_err(|e| DecodeError::FerrousWaves(e.to_string()))
+    match ext.as_str() {
+        // ferrous-waves handles WAV and MP3 natively
+        "wav" | "mp3" => {
+            AudioFile::load(path).map_err(|e| DecodeError::FerrousWaves(e.to_string()))
+        }
+        // Everything else (SHN, FLAC, OGG, etc.) goes through ffmpeg → WAV
+        _ => load_via_ffmpeg(path),
     }
 }
 
-/// Decode a .shn file by shelling out to ffmpeg and converting to WAV in a temp file.
-fn load_shn_via_ffmpeg(path: &Path) -> Result<AudioFile, DecodeError> {
+/// Decode an audio file by shelling out to ffmpeg and converting to WAV in a temp file.
+/// Works with any format ffmpeg supports (SHN, FLAC, OGG, AIFF, etc.).
+fn load_via_ffmpeg(path: &Path) -> Result<AudioFile, DecodeError> {
     // Check ffmpeg is available
     let ffmpeg_check = Command::new("ffmpeg").arg("-version").output();
     if ffmpeg_check.is_err() {
@@ -46,7 +50,7 @@ fn load_shn_via_ffmpeg(path: &Path) -> Result<AudioFile, DecodeError> {
     static COUNTER: AtomicU64 = AtomicU64::new(0);
     let id = COUNTER.fetch_add(1, Ordering::Relaxed);
     let tmp_dir = std::env::temp_dir();
-    let tmp_wav = tmp_dir.join(format!("setbreak_shn_{}_{}.wav", std::process::id(), id));
+    let tmp_wav = tmp_dir.join(format!("setbreak_decode_{}_{}.wav", std::process::id(), id));
 
     let output = Command::new("ffmpeg")
         .args([
