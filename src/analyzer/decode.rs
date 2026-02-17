@@ -15,6 +15,8 @@ pub enum DecodeError {
     Flac(String),
     #[error("SHN decode error: {0}")]
     Shn(String),
+    #[error("APE decode error: {0}")]
+    Ape(String),
     #[error("ffmpeg not found — required for SHN files")]
     FfmpegNotFound,
     #[error("ffmpeg decode error: {0}")]
@@ -29,7 +31,8 @@ pub enum DecodeError {
 /// - WAV/MP3/AIFF/OGG/M4A/AAC/OPUS: ferrous-waves (symphonia — all codecs compiled in)
 /// - FLAC: claxon (native Rust, no external deps)
 /// - SHN: shorten-rs (native Rust)
-/// - APE/WV/DSD/etc: ffmpeg subprocess (no native Rust decoder available)
+/// - APE: ape-rs (native Rust)
+/// - WV/DSD/etc: ffmpeg subprocess (no native Rust decoder available)
 pub fn load_audio(path: &Path) -> Result<AudioFile, DecodeError> {
     let ext = path
         .extension()
@@ -45,7 +48,8 @@ pub fn load_audio(path: &Path) -> Result<AudioFile, DecodeError> {
         // Native via dedicated Rust crates
         "flac" => load_flac_native(path)?,
         "shn" => load_shn_native(path)?,
-        // Fallback to ffmpeg for formats without Rust decoders (APE, WavPack, DSD)
+        "ape" => load_ape_native(path)?,
+        // Fallback to ffmpeg for formats without Rust decoders (WavPack, DSD)
         _ => load_via_ffmpeg(path)?,
     };
 
@@ -99,6 +103,32 @@ fn load_shn_native(path: &Path) -> Result<AudioFile, DecodeError> {
         .samples()
         .collect::<Result<Vec<i32>, _>>()
         .map_err(|e| DecodeError::Shn(format!("{}: {}", path.display(), e)))?;
+
+    let samples_f32: Vec<f32> = samples_i32.iter().map(|&s| s as f32 / scale).collect();
+
+    let buffer = AudioBuffer::new(samples_f32, sample_rate, channels);
+    Ok(AudioFile {
+        buffer,
+        format: AudioFormat::from_path(path),
+        path: path.display().to_string(),
+    })
+}
+
+/// Decode a Monkey's Audio (APE) file natively using the ape-rs crate.
+fn load_ape_native(path: &Path) -> Result<AudioFile, DecodeError> {
+    let mut reader = ape_rs::ApeReader::open(path)
+        .map_err(|e| DecodeError::Ape(format!("{}: {}", path.display(), e)))?;
+
+    let info = reader.info();
+    let sample_rate = info.sample_rate;
+    let channels = info.channels as usize;
+    let bits_per_sample = info.bits_per_sample;
+    let scale = 2_f32.powi(bits_per_sample as i32 - 1);
+
+    let samples_i32: Vec<i32> = reader
+        .samples()
+        .collect::<Result<Vec<i32>, _>>()
+        .map_err(|e| DecodeError::Ape(format!("{}: {}", path.display(), e)))?;
 
     let samples_f32: Vec<f32> = samples_i32.iter().map(|&s| s as f32 / scale).collect();
 

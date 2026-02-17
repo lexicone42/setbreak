@@ -14,8 +14,10 @@ pub const SUPPORTED_EXTENSIONS: &[&str] = &[
     "mp3", "flac", "ogg", "shn", "wav",
     // Native (symphonia via ferrous-waves)
     "aif", "aiff",
-    // ffmpeg fallback
-    "ape", "wv", "m4a", "aac", "opus", "dsf", "dff",
+    // Native (dedicated Rust crates)
+    "ape",
+    // Native (symphonia) or ffmpeg fallback
+    "wv", "m4a", "aac", "opus", "dsf", "dff",
 ];
 
 /// Application name for XDG paths
