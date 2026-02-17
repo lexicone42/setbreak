@@ -70,8 +70,11 @@ impl Database {
         if version < 6 {
             self.migrate_v6()?;
         }
+        if version < 7 {
+            self.migrate_v7()?;
+        }
 
-        self.conn.pragma_update(None, "user_version", 6)?;
+        self.conn.pragma_update(None, "user_version", 7)?;
         Ok(())
     }
 
@@ -437,6 +440,12 @@ impl Database {
             CREATE INDEX IF NOT EXISTS idx_archive_date ON archive_shows(date);
             ",
         )?;
+        Ok(())
+    }
+
+    /// V7: Recording type classification (live / studio / live_album)
+    fn migrate_v7(&self) -> Result<()> {
+        try_add_column(&self.conn, "tracks", "recording_type TEXT")?;
         Ok(())
     }
 }

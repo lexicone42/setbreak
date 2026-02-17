@@ -15,14 +15,14 @@ impl Database {
                 set_name, venue, comment,
                 parsed_band, parsed_date, parsed_venue, parsed_disc,
                 parsed_track, parsed_set, parsed_title, duration_secs,
-                updated_at
+                recording_type, updated_at
             ) VALUES (
                 ?1, ?2, ?3, ?4,
                 ?5, ?6, ?7, ?8, ?9, ?10,
                 ?11, ?12, ?13,
                 ?14, ?15, ?16, ?17,
                 ?18, ?19, ?20, ?21,
-                datetime('now')
+                ?22, datetime('now')
             )
             ON CONFLICT(file_path) DO UPDATE SET
                 file_size = excluded.file_size,
@@ -45,6 +45,7 @@ impl Database {
                 parsed_set = excluded.parsed_set,
                 parsed_title = excluded.parsed_title,
                 duration_secs = excluded.duration_secs,
+                recording_type = excluded.recording_type,
                 updated_at = datetime('now')
             ",
             params![
@@ -53,6 +54,7 @@ impl Database {
                 t.set_name, t.venue, t.comment,
                 t.parsed_band, t.parsed_date, t.parsed_venue, t.parsed_disc,
                 t.parsed_track, t.parsed_set, t.parsed_title, t.duration_secs,
+                t.recording_type,
             ],
         )?;
 
@@ -1170,6 +1172,33 @@ impl Database {
             .collect::<std::result::Result<Vec<_>, _>>()?;
         Ok(rows)
     }
+
+    /// Get all tracks for recording type classification backfill.
+    /// Returns (id, file_path, parsed_date, album).
+    pub fn get_tracks_for_classify(&self) -> Result<Vec<(i64, String, Option<String>, Option<String>)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, file_path, parsed_date, album FROM tracks"
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+            ))
+        })?;
+        rows.collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(Into::into)
+    }
+
+    /// Update a single track's recording_type.
+    pub fn update_recording_type(&self, track_id: i64, recording_type: &str) -> Result<()> {
+        self.conn.execute(
+            "UPDATE tracks SET recording_type = ?1 WHERE id = ?2",
+            params![recording_type, track_id],
+        )?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -1200,6 +1229,7 @@ mod tests {
             parsed_set: None,
             parsed_title: None,
             duration_secs: Some(300.0),
+            recording_type: Some("live".to_string()),
         }
     }
 

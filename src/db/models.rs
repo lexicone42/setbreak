@@ -24,6 +24,7 @@ pub struct NewTrack {
     pub parsed_title: Option<String>,
 
     pub duration_secs: Option<f64>,
+    pub recording_type: Option<String>,
 }
 
 /// A track row read from the database.

@@ -1,3 +1,4 @@
+pub mod classify;
 pub mod filename;
 pub mod metadata;
 
@@ -146,6 +147,12 @@ fn process_file(
     // Parse filename/path for jam band metadata
     let parsed = filename::parse_path(path);
 
+    let recording_type = classify::classify_recording_type(
+        &file_path,
+        parsed.date.as_deref(),
+        tags.album.as_deref(),
+    );
+
     let new_track = NewTrack {
         file_path,
         file_size,
@@ -168,6 +175,7 @@ fn process_file(
         parsed_set: parsed.set,
         parsed_title: parsed.title,
         duration_secs: tags.duration_secs,
+        recording_type: Some(recording_type.to_string()),
     };
 
     // Use the transaction connection directly
@@ -178,14 +186,14 @@ fn process_file(
             set_name, venue, comment,
             parsed_band, parsed_date, parsed_venue, parsed_disc,
             parsed_track, parsed_set, parsed_title, duration_secs,
-            updated_at
+            recording_type, updated_at
         ) VALUES (
             ?1, ?2, ?3, ?4,
             ?5, ?6, ?7, ?8, ?9, ?10,
             ?11, ?12, ?13,
             ?14, ?15, ?16, ?17,
             ?18, ?19, ?20, ?21,
-            datetime('now')
+            ?22, datetime('now')
         )
         ON CONFLICT(file_path) DO UPDATE SET
             file_size = excluded.file_size,
@@ -208,6 +216,7 @@ fn process_file(
             parsed_set = excluded.parsed_set,
             parsed_title = excluded.parsed_title,
             duration_secs = excluded.duration_secs,
+            recording_type = excluded.recording_type,
             updated_at = datetime('now')
         ",
         rusqlite::params![
@@ -217,6 +226,7 @@ fn process_file(
             new_track.set_name, new_track.venue, new_track.comment,
             new_track.parsed_band, new_track.parsed_date, new_track.parsed_venue, new_track.parsed_disc,
             new_track.parsed_track, new_track.parsed_set, new_track.parsed_title, new_track.duration_secs,
+            new_track.recording_type,
         ],
     ).map_err(|e| crate::db::DbError::from(e))?;
 

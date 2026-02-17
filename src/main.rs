@@ -215,6 +215,9 @@ enum Commands {
         limit: usize,
     },
 
+    /// Classify tracks as live, studio, or live_album (backfill existing tracks)
+    Classify,
+
     /// Show library statistics
     Stats,
 }
@@ -508,6 +511,39 @@ fn main() -> Result<()> {
                 println!("Download with: ia download <identifier>");
                 println!("  (install: pip install internetarchive)");
             }
+        }
+
+        Commands::Classify => {
+            let tracks = db.get_tracks_for_classify()
+                .context("Failed to load tracks for classification")?;
+            let total = tracks.len();
+
+            let tx = db.conn.unchecked_transaction()?;
+            let mut counts = std::collections::HashMap::new();
+
+            for (id, file_path, parsed_date, album) in &tracks {
+                let rtype = setbreak::scanner::classify::classify_recording_type(
+                    file_path,
+                    parsed_date.as_deref(),
+                    album.as_deref(),
+                );
+                *counts.entry(rtype).or_insert(0usize) += 1;
+                tx.execute(
+                    "UPDATE tracks SET recording_type = ?1 WHERE id = ?2",
+                    rusqlite::params![rtype, id],
+                )?;
+            }
+            tx.commit()?;
+
+            let live = counts.get("live").copied().unwrap_or(0);
+            let studio = counts.get("studio").copied().unwrap_or(0);
+            let live_album = counts.get("live_album").copied().unwrap_or(0);
+            let unknown = counts.get("unknown").copied().unwrap_or(0);
+
+            println!(
+                "Classify complete: {} tracks — {} live, {} studio, {} live_album, {} unknown",
+                total, live, studio, live_album, unknown
+            );
         }
 
         Commands::Stats => {
