@@ -545,6 +545,20 @@ impl Database {
         Ok(())
     }
 
+    /// Load per-segment energy values for a track, ordered by time.
+    /// Returns (start_time, energy) pairs for arc detection in build quality scoring.
+    pub fn get_segment_energies(&self, track_id: i64) -> Result<Vec<(f64, f64)>> {
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT start_time, energy FROM track_segments
+             WHERE track_id = ?1 AND energy IS NOT NULL
+             ORDER BY start_time",
+        )?;
+        let rows = stmt
+            .query_map(params![track_id], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
     /// Query top tracks by a given score column.
     /// `score_column` must be one of the valid score column names.
     pub fn query_top(

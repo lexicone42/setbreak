@@ -3,21 +3,36 @@ use ferrous_waves::analysis::engine::AnalysisResult;
 
 /// Compute all jam-specific derived scores (0-100) and attach them to the analysis.
 ///
-/// All scores are computed from pre-extracted scalars in NewAnalysis, not from the
-/// raw AnalysisResult. This ensures `rescore` always matches initial scoring.
-pub fn compute_jam_scores(analysis: &mut NewAnalysis, _result: &AnalysisResult) {
-    compute_jam_scores_from_scalars(analysis);
+/// During initial analysis, extracts segment energies directly from the AnalysisResult
+/// so the build quality score uses segment data even before segments are stored in DB.
+pub fn compute_jam_scores(analysis: &mut NewAnalysis, result: &AnalysisResult) {
+    // Extract (start_time, energy) pairs from raw analysis segments
+    let segment_energies: Vec<(f64, f64)> = result
+        .segments
+        .segments
+        .iter()
+        .map(|seg| (seg.start_time as f64, seg.energy as f64))
+        .collect();
+    let segments = if segment_energies.is_empty() {
+        None
+    } else {
+        Some(segment_energies.as_slice())
+    };
+    compute_jam_scores_from_scalars(analysis, segments);
 }
 
-/// Compute all jam scores from DB scalars only (no AnalysisResult needed).
-/// Used by the rescore command and delegated to by compute_jam_scores.
-pub fn compute_jam_scores_from_scalars(analysis: &mut NewAnalysis) {
+/// Compute all jam scores from DB scalars plus optional segment energy data.
+/// Used by the rescore command (with DB-loaded segments) and by compute_jam_scores.
+pub fn compute_jam_scores_from_scalars(
+    analysis: &mut NewAnalysis,
+    segment_energies: Option<&[(f64, f64)]>,
+) {
     analysis.energy_score = Some(energy_score(analysis));
     analysis.intensity_score = Some(intensity_score(analysis));
     analysis.groove_score = Some(groove_score(analysis));
     analysis.improvisation_score = Some(improvisation_score(analysis));
     analysis.tightness_score = Some(tightness_score(analysis));
-    analysis.build_quality_score = Some(build_quality_score(analysis));
+    analysis.build_quality_score = Some(build_quality_score(analysis, segment_energies));
     analysis.exploratory_score = Some(exploratory_score(analysis));
     analysis.transcendence_score = Some(transcendence_score(analysis));
     analysis.valence_score = Some(valence_score(analysis));
@@ -205,37 +220,242 @@ fn tightness_score(a: &NewAnalysis) -> f64 {
 
 // ── Build Quality Score (0-100) ───────────────────────────────────────
 // How well the music builds to peaks — dynamic arcs and tension.
-// Uses crest factor, loudness range, energy variance, and transition density.
-fn build_quality_score(a: &NewAnalysis) -> f64 {
+//
+// Primary: segment-level arc detection (when segment data available and track >= 90s).
+// Analyzes the energy contour in 30-second windows to find build→peak arcs,
+// scores each arc on magnitude/duration/peak height, rewards multiple arcs.
+//
+// Fallback: whole-track aggregates (crest factor, loudness range, energy variance,
+// transition density) for short tracks or when no segment data exists.
+fn build_quality_score(a: &NewAnalysis, segment_energies: Option<&[(f64, f64)]>) -> f64 {
+    let duration = a.duration.unwrap_or(0.0);
+
+    // Use segment-based scoring when we have data and track is long enough for arcs
+    if let Some(energies) = segment_energies {
+        if duration >= 90.0 && energies.len() >= 3 {
+            return build_quality_from_segments(energies, duration);
+        }
+    }
+
+    build_quality_score_fallback(a)
+}
+
+/// Fallback: whole-track aggregate formula (original build_quality_score).
+fn build_quality_score_fallback(a: &NewAnalysis) -> f64 {
     let duration = a.duration.unwrap_or(1.0).max(1.0);
 
     // 1. Crest factor (30 pts): peak-to-RMS ratio = dynamic peak character
-    // Library range: 3.15-35.6, avg 9.56
-    // Higher crest = sharper dynamic peaks = more build potential
     let crest = a.crest_factor.unwrap_or(5.0);
     let crest_norm = ((crest - 3.0) / 25.0).clamp(0.0, 1.0);
     let crest_contrib = crest_norm * 30.0;
 
     // 2. Loudness range (25 pts): wide LRA = dynamic builds
-    // Library range: 1.1-33, avg 10.7
     let lra = a.loudness_range.unwrap_or(0.0);
     let lra_norm = ((lra - 1.0) / 20.0).clamp(0.0, 1.0);
     let lra_contrib = lra_norm * 25.0;
 
     // 3. Energy variance (20 pts): variation in energy = dynamic movement
-    // Library range: 0.00001-0.014, avg 0.0017
     let e_var = a.energy_variance.unwrap_or(0.0);
     let var_norm = (e_var / 0.01).clamp(0.0, 1.0);
     let var_contrib = var_norm * 20.0;
 
     // 4. Transition density (25 pts): transitions per minute = structural dynamism
-    // Library range: 0-27/min, avg varies
     let transitions = a.transition_count.unwrap_or(0) as f64;
     let trans_per_min = transitions / (duration / 60.0);
     let trans_norm = (trans_per_min / 5.0).clamp(0.0, 1.0);
     let trans_contrib = trans_norm * 25.0;
 
     (crest_contrib + lra_contrib + var_contrib + trans_contrib).clamp(0.0, 100.0)
+}
+
+/// A detected build arc in the energy contour.
+#[derive(Debug)]
+struct BuildArc {
+    /// Index of the arc's lowest energy (trough)
+    start_idx: usize,
+    /// Index of the arc's highest energy (peak)
+    peak_idx: usize,
+    /// Energy value at the trough
+    trough_energy: f64,
+    /// Energy value at the peak
+    peak_energy: f64,
+}
+
+/// Bucket ~1-second segments into 30-second windows, then apply 3-window rolling average.
+fn bucket_and_smooth(energies: &[(f64, f64)], duration: f64) -> Vec<f64> {
+    let window_secs = 30.0;
+    let n_windows = ((duration / window_secs).ceil() as usize).max(1);
+    let mut buckets = vec![Vec::new(); n_windows];
+
+    for &(time, energy) in energies {
+        let idx = ((time / window_secs) as usize).min(n_windows - 1);
+        buckets[idx].push(energy);
+    }
+
+    // Mean energy per window (empty windows get 0.0)
+    let raw: Vec<f64> = buckets
+        .iter()
+        .map(|b| {
+            if b.is_empty() {
+                0.0
+            } else {
+                b.iter().sum::<f64>() / b.len() as f64
+            }
+        })
+        .collect();
+
+    // 3-window rolling average to smooth noise
+    if raw.len() < 3 {
+        return raw;
+    }
+    let mut smoothed = Vec::with_capacity(raw.len());
+    smoothed.push((raw[0] + raw[1]) / 2.0);
+    for i in 1..raw.len() - 1 {
+        smoothed.push((raw[i - 1] + raw[i] + raw[i + 1]) / 3.0);
+    }
+    smoothed.push((raw[raw.len() - 2] + raw[raw.len() - 1]) / 2.0);
+    smoothed
+}
+
+/// Detect build arcs in smoothed energy windows.
+///
+/// An arc starts when energy begins rising. It continues as long as energy doesn't
+/// drop more than 15% below the running max (tolerance for brief dips). The arc ends
+/// when energy drops >15% below running max, or at end of track.
+fn detect_arcs(windows: &[f64]) -> Vec<BuildArc> {
+    if windows.len() < 2 {
+        return vec![];
+    }
+
+    let mut arcs = Vec::new();
+    let mut in_arc = false;
+    let mut arc_start = 0;
+    let mut running_max = 0.0_f64;
+    let mut peak_idx = 0;
+    let mut trough_energy = 0.0_f64;
+
+    for i in 1..windows.len() {
+        let rising = windows[i] > windows[i - 1] * 0.95; // tolerant rise detection
+
+        if !in_arc && rising {
+            // Start a new arc
+            in_arc = true;
+            arc_start = i - 1;
+            trough_energy = windows[i - 1];
+            running_max = windows[i];
+            peak_idx = i;
+        } else if in_arc {
+            if windows[i] > running_max {
+                running_max = windows[i];
+                peak_idx = i;
+            }
+
+            // Check if energy has dropped >15% below the running max
+            let drop_threshold = running_max * 0.85;
+            if windows[i] < drop_threshold {
+                // Arc ended — record if the build was meaningful
+                let magnitude = running_max - trough_energy;
+                if magnitude > 0.0 && peak_idx > arc_start {
+                    arcs.push(BuildArc {
+                        start_idx: arc_start,
+                        peak_idx,
+                        trough_energy,
+                        peak_energy: running_max,
+                    });
+                }
+                in_arc = false;
+            }
+        }
+    }
+
+    // Close any in-progress arc at end of track
+    if in_arc {
+        let magnitude = running_max - trough_energy;
+        if magnitude > 0.0 && peak_idx > arc_start {
+            arcs.push(BuildArc {
+                start_idx: arc_start,
+                peak_idx,
+                trough_energy,
+                peak_energy: running_max,
+            });
+        }
+    }
+
+    arcs
+}
+
+/// Score a single build arc (0-100).
+fn score_arc(arc: &BuildArc, track_avg: f64, track_range: f64) -> f64 {
+    let duration_windows = (arc.peak_idx - arc.start_idx) as f64;
+    let magnitude = arc.peak_energy - arc.trough_energy;
+
+    // 1. Magnitude (40 pts): energy delta normalized to track energy range
+    // A build that covers the full dynamic range of the track scores 40.
+    let mag_norm = if track_range > 0.0 {
+        (magnitude / track_range).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let mag_contrib = mag_norm * 40.0;
+
+    // 2. Duration (30 pts): longer builds score higher
+    // 1 window (30s) = low score, ~10 windows (5 min) = max
+    // Minimum 2 windows to register, ramps up to 10
+    let dur_norm = ((duration_windows - 1.0) / 9.0).clamp(0.0, 1.0);
+    let dur_contrib = dur_norm * 30.0;
+
+    // 3. Peak height (30 pts): how high the peak is relative to track average
+    // Peaks well above average energy are more impressive builds
+    let peak_ratio = if track_avg > 0.0 {
+        arc.peak_energy / track_avg
+    } else {
+        1.0
+    };
+    // ratio of 1.0 = at average (low score), 2.0+ = well above (high score)
+    let peak_norm = ((peak_ratio - 1.0) / 1.5).clamp(0.0, 1.0);
+    let peak_contrib = peak_norm * 30.0;
+
+    (mag_contrib + dur_contrib + peak_contrib).clamp(0.0, 100.0)
+}
+
+/// Segment-level build quality scoring via arc detection.
+fn build_quality_from_segments(energies: &[(f64, f64)], duration: f64) -> f64 {
+    let windows = bucket_and_smooth(energies, duration);
+    if windows.len() < 2 {
+        return 0.0;
+    }
+
+    let track_avg = windows.iter().sum::<f64>() / windows.len() as f64;
+    let track_min = windows.iter().cloned().fold(f64::INFINITY, f64::min);
+    let track_max = windows.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+    let track_range = track_max - track_min;
+
+    let arcs = detect_arcs(&windows);
+    if arcs.is_empty() {
+        return 0.0;
+    }
+
+    // Score each arc, keep the best
+    let mut arc_scores: Vec<f64> = arcs
+        .iter()
+        .map(|arc| score_arc(arc, track_avg, track_range))
+        .collect();
+    arc_scores.sort_by(|a, b| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
+
+    let best_score = arc_scores[0];
+
+    // Multi-arc bonus: reward tracks with multiple good build arcs
+    // Filter to arcs scoring >= 20 (meaningful builds, not noise)
+    let good_arc_count = arc_scores.iter().filter(|&&s| s >= 20.0).count();
+    let multi_arc_bonus = match good_arc_count {
+        0 | 1 => 0.0,
+        2 => 40.0,
+        3 => 70.0,
+        _ => 100.0, // 4+ good arcs = max bonus
+    };
+
+    // Track score = best arc (70%) + multi-arc bonus (30%)
+    (best_score * 0.7 + multi_arc_bonus * 0.3).clamp(0.0, 100.0)
 }
 
 // ── Exploratory Score (0-100) ─────────────────────────────────────────
@@ -471,7 +691,7 @@ mod tests {
     #[test]
     fn test_all_scores_in_range() {
         let mut a = base_analysis();
-        compute_jam_scores_from_scalars(&mut a);
+        compute_jam_scores_from_scalars(&mut a, None);
 
         for (name, val) in [
             ("energy", a.energy_score), ("intensity", a.intensity_score),
@@ -517,5 +737,141 @@ mod tests {
         assert!(energy_score(&a) < 10.0, "energy={}", energy_score(&a));
         assert!(intensity_score(&a) < 10.0, "intensity={}", intensity_score(&a));
         assert!(groove_score(&a) < 10.0, "groove={}", groove_score(&a));
+    }
+
+    // ── Arc detection tests ──────────────────────────────────────────
+
+    #[test]
+    fn test_detect_single_build_arc() {
+        // Steady build from 0.1 to 0.9 over 8 windows then drop
+        let windows = vec![0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.3];
+        let arcs = detect_arcs(&windows);
+        assert_eq!(arcs.len(), 1, "expected 1 arc, got {}", arcs.len());
+        assert!(arcs[0].peak_energy > 0.85);
+        assert!(arcs[0].trough_energy < 0.15);
+    }
+
+    #[test]
+    fn test_detect_multiple_arcs() {
+        // Two build→peak→release cycles
+        let windows = vec![
+            0.1, 0.3, 0.5, 0.7, 0.9, // first build
+            0.3, 0.2,                   // drop
+            0.2, 0.4, 0.6, 0.8, 1.0,   // second build
+            0.4,                        // drop
+        ];
+        let arcs = detect_arcs(&windows);
+        assert!(arcs.len() >= 2, "expected >= 2 arcs, got {}", arcs.len());
+    }
+
+    #[test]
+    fn test_detect_no_arcs_flat() {
+        // Flat energy — no build arcs
+        let windows = vec![0.5, 0.5, 0.5, 0.5, 0.5, 0.5];
+        let arcs = detect_arcs(&windows);
+        assert!(arcs.is_empty(), "flat energy should have no arcs");
+    }
+
+    #[test]
+    fn test_detect_arcs_with_dip_tolerance() {
+        // Build with a brief 10% dip (within 15% tolerance) that shouldn't break the arc
+        let windows = vec![0.2, 0.4, 0.6, 0.55, 0.7, 0.8, 0.9, 0.3];
+        let arcs = detect_arcs(&windows);
+        assert_eq!(arcs.len(), 1, "dip within tolerance should not split arc");
+        assert!(arcs[0].peak_energy > 0.85);
+    }
+
+    #[test]
+    fn test_score_arc_full_range_long_build() {
+        // Perfect arc: covers full track range, long duration, peaks well above average
+        let arc = BuildArc {
+            start_idx: 0,
+            peak_idx: 9,
+            trough_energy: 0.1,
+            peak_energy: 0.9,
+        };
+        let score = score_arc(&arc, 0.4, 0.8);
+        assert!(score > 80.0, "perfect arc should score > 80, got {score}");
+    }
+
+    #[test]
+    fn test_score_arc_short_small() {
+        // Weak arc: small magnitude, short duration
+        let arc = BuildArc {
+            start_idx: 0,
+            peak_idx: 1,
+            trough_energy: 0.4,
+            peak_energy: 0.5,
+        };
+        let score = score_arc(&arc, 0.45, 0.8);
+        assert!(score < 30.0, "weak arc should score < 30, got {score}");
+    }
+
+    #[test]
+    fn test_build_quality_from_segments_multi_arc() {
+        // 10-minute track with 3 build arcs (simulated as (time, energy) pairs)
+        let duration = 600.0;
+        let mut energies = Vec::new();
+        // Arc 1: 0-120s, build from 0.1 to 0.8
+        for t in 0..120 {
+            let e = 0.1 + 0.7 * (t as f64 / 120.0);
+            energies.push((t as f64, e));
+        }
+        // Drop: 120-180s
+        for t in 120..180 {
+            energies.push((t as f64, 0.2));
+        }
+        // Arc 2: 180-300s, build from 0.15 to 0.85
+        for t in 180..300 {
+            let e = 0.15 + 0.7 * ((t - 180) as f64 / 120.0);
+            energies.push((t as f64, e));
+        }
+        // Drop: 300-360s
+        for t in 300..360 {
+            energies.push((t as f64, 0.2));
+        }
+        // Arc 3: 360-480s, build from 0.1 to 0.9
+        for t in 360..480 {
+            let e = 0.1 + 0.8 * ((t - 360) as f64 / 120.0);
+            energies.push((t as f64, e));
+        }
+        // Outro: 480-600s
+        for t in 480..600 {
+            energies.push((t as f64, 0.3));
+        }
+
+        let score = build_quality_from_segments(&energies, duration);
+        assert!(score > 50.0, "multi-arc 10-min jam should score > 50, got {score}");
+    }
+
+    #[test]
+    fn test_build_quality_fallback_for_short_track() {
+        let mut a = base_analysis();
+        a.duration = Some(60.0); // short track
+        // Even with segment data, should use fallback for < 90s
+        let segments = vec![(0.0, 0.5), (30.0, 0.7), (60.0, 0.9)];
+        let score = build_quality_score(&a, Some(&segments));
+        let fallback = build_quality_score_fallback(&a);
+        assert!((score - fallback).abs() < 0.01, "short track should use fallback");
+    }
+
+    #[test]
+    fn test_build_quality_no_segments_uses_fallback() {
+        let a = base_analysis();
+        let score = build_quality_score(&a, None);
+        let fallback = build_quality_score_fallback(&a);
+        assert!((score - fallback).abs() < 0.01, "no segments should use fallback");
+    }
+
+    #[test]
+    fn test_bucket_and_smooth_basic() {
+        // 90 seconds of energy data, should produce 3 windows of 30s each
+        let energies: Vec<(f64, f64)> = (0..90)
+            .map(|t| (t as f64, if t < 30 { 0.2 } else if t < 60 { 0.5 } else { 0.8 }))
+            .collect();
+        let windows = bucket_and_smooth(&energies, 90.0);
+        assert_eq!(windows.len(), 3, "90s / 30s = 3 windows");
+        // After smoothing, middle window should be roughly average of all three
+        assert!(windows[1] > 0.3 && windows[1] < 0.7, "middle should be blended");
     }
 }

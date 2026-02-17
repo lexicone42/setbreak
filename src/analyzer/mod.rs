@@ -49,7 +49,14 @@ pub fn rescore_tracks(db: &Database) -> Result<RescoreResult, AnalyzeError> {
     let tx = db.conn.unchecked_transaction().map_err(|e| AnalyzeError::Db(e.into()))?;
 
     for a in &mut analyses {
-        jam_metrics::compute_jam_scores_from_scalars(a);
+        // Load segment energies for segment-level build quality scoring
+        let segment_energies = db.get_segment_energies(a.track_id).unwrap_or_default();
+        let segments = if segment_energies.is_empty() {
+            None
+        } else {
+            Some(segment_energies.as_slice())
+        };
+        jam_metrics::compute_jam_scores_from_scalars(a, segments);
         db.update_jam_scores(a)?;
         pb.inc(1);
     }
