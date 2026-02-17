@@ -237,11 +237,30 @@ fn build_position_map(file_map: &HashMap<String, String>) -> HashMap<(u32, u32),
 /// - `gd74-06-23sbd_t40.mp3` → (0, 40)
 /// - `ph150805d1_06_The_Last_Step.mp3` → (1, 6)
 /// - `Built To Spill 1999-03-08 Boise11.mp3` → (0, 11)
+/// - `disc one/08 - reggae jam.mp3` → (1, 8) (archive.org naming)
+/// - `disc two/03 - title.flac` → (2, 3) (archive.org naming)
 fn extract_disc_track(filename: &str) -> Option<(u32, u32)> {
     let name = Path::new(filename)
         .file_stem()
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_default();
+
+    // Pattern 0: archive.org "disc {word}/{NN} - title" format
+    // The filename includes the subdirectory path from archive metadata
+    let re_disc_word = Regex::new(r"(?i)disc (\w+)/0*(\d+)").unwrap();
+    if let Some(caps) = re_disc_word.captures(filename) {
+        let disc = match caps[1].to_lowercase().as_str() {
+            "one" | "1" => 1,
+            "two" | "2" => 2,
+            "three" | "3" => 3,
+            "four" | "4" => 4,
+            _ => caps[1].parse().unwrap_or(0),
+        };
+        let track: u32 = caps[2].parse().unwrap_or(0);
+        if disc > 0 && track > 0 {
+            return Some((disc, track));
+        }
+    }
 
     // Pattern 1: d{disc}t{track} or s{set}t{track} (most common)
     let re_dt = Regex::new(r"[ds](\d+)[t_](\d+)").unwrap();
@@ -472,6 +491,15 @@ mod tests {
     #[test]
     fn test_extract_disc_track_none() {
         assert_eq!(extract_disc_track("README.txt"), None);
+    }
+
+    #[test]
+    fn test_extract_disc_track_archive_org() {
+        assert_eq!(extract_disc_track("disc one/08 - reggae jam.mp3"), Some((1, 8)));
+        assert_eq!(extract_disc_track("disc two/03 - title.flac"), Some((2, 3)));
+        assert_eq!(extract_disc_track("disc three/01 - opener.mp3"), Some((3, 1)));
+        assert_eq!(extract_disc_track("Disc One/01 - stab.flac"), Some((1, 1)));
+        assert_eq!(extract_disc_track("disc 1/05 - song.mp3"), Some((1, 5)));
     }
 
     #[test]

@@ -932,12 +932,17 @@ impl Database {
         })
     }
 
-    /// Get tracks missing titles (no parsed_title AND no tag title).
+    /// Get tracks missing usable titles for setlist lookup.
+    /// Matches tracks where parsed_title is NULL and the tag title is absent,
+    /// empty, or a known placeholder (e.g. "??", "unknown", "Track N").
     /// Returns (track_id, file_path) pairs.
     pub fn get_tracks_missing_titles(&self) -> Result<Vec<(i64, String)>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, file_path FROM tracks
-             WHERE parsed_title IS NULL AND title IS NULL
+             WHERE parsed_title IS NULL
+               AND (title IS NULL OR title = '' OR title = '??'
+                    OR LOWER(title) = 'unknown' OR LOWER(title) LIKE 'untitled%'
+                    OR title LIKE 'Track __' OR title LIKE 'Track ___')
              ORDER BY file_path",
         )?;
 
