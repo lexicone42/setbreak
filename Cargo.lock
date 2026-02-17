@@ -2116,7 +2116,7 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
- "shn",
+ "shorten-rs",
  "thiserror 2.0.18",
  "tokio",
  "toml",
@@ -2151,9 +2151,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 
 [[package]]
-name = "shn"
+name = "shorten-rs"
 version = "0.1.0"
-source = "git+https://github.com/lexicone42/shorten-rs.git#9576e4d08b41e900264e3bda1fb927af85858bb6"
+source = "git+https://github.com/lexicone42/shorten-rs.git#78f9e06ba95ff363b1566d44b4db15d564f44a6b"
 
 [[package]]
 name = "signal-hook-registry"

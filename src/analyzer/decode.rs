@@ -71,9 +71,9 @@ fn load_flac_native(path: &Path) -> Result<AudioFile, DecodeError> {
     })
 }
 
-/// Decode a Shorten (SHN) file natively using the shn crate.
+/// Decode a Shorten (SHN) file natively using the shorten-rs crate.
 fn load_shn_native(path: &Path) -> Result<AudioFile, DecodeError> {
-    let mut reader = shn::ShnReader::open(path)
+    let mut reader = shorten_rs::ShnReader::open(path)
         .map_err(|e| DecodeError::Shn(format!("{}: {}", path.display(), e)))?;
 
     let info = reader.info();

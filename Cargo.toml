@@ -40,7 +40,7 @@ walkdir = "2"
 claxon = "0.4"
 
 # Native SHN decoding
-shn = { git = "https://github.com/lexicone42/shorten-rs.git" }
+shorten-rs = { git = "https://github.com/lexicone42/shorten-rs.git" }
 
 # Errors
 anyhow = "1"
