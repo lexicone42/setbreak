@@ -102,6 +102,13 @@ enum Commands {
     /// Recompute jam scores from stored features (no audio re-analysis)
     Rescore,
 
+    /// Adjust scores to remove recording quality bias (LUFS regression)
+    Calibrate {
+        /// Show what would change without writing to DB
+        #[arg(long)]
+        dry_run: bool,
+    },
+
     /// Show top tracks ranked by a jam score
     Top {
         /// Which score to rank by
@@ -300,6 +307,22 @@ fn main() -> Result<()> {
             let result = setbreak::analyzer::rescore_tracks(&db)
                 .context("Rescore failed")?;
             println!("Rescore complete: {} tracks updated", result.rescored);
+        }
+
+        Commands::Calibrate { dry_run } => {
+            if dry_run {
+                println!("DRY RUN — no changes will be written to the database");
+                println!();
+            }
+            let result = setbreak::calibrate::calibrate_scores(&db, dry_run)
+                .context("Calibration failed")?;
+            println!(
+                "Calibration complete: {} calibrated, {} skipped (no show date)",
+                result.calibrated, result.skipped_no_show
+            );
+            if dry_run && result.total_tracks > 0 {
+                println!("(dry run — re-run without --dry-run to apply)");
+            }
         }
 
         Commands::Top { score, limit, song, min_duration } => {

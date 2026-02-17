@@ -1,5 +1,5 @@
 use super::models::{
-    ArchiveShow, ChordEvent, LibraryStats, NewAnalysis, NewTrack, SegmentRecord,
+    ArchiveShow, CalibrationRow, ChordEvent, LibraryStats, NewAnalysis, NewTrack, SegmentRecord,
     TensionPointRecord, Track, TrackScore, TransitionRecord,
 };
 use super::{Database, Result};
@@ -1110,6 +1110,46 @@ impl Database {
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok(false),
             Err(e) => Err(e.into()),
         }
+    }
+
+    /// Load calibration data: scores, LUFS, and show grouping info for all analyzed tracks.
+    pub fn get_calibration_data(&self) -> Result<Vec<CalibrationRow>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT a.track_id, a.lufs_integrated,
+                    a.energy_score, a.intensity_score, a.groove_score,
+                    a.improvisation_score, a.tightness_score, a.build_quality_score,
+                    a.exploratory_score, a.transcendence_score,
+                    a.valence_score, a.arousal_score,
+                    t.parsed_date, t.parsed_band
+             FROM analysis_results a
+             JOIN tracks t ON t.id = a.track_id
+             WHERE a.lufs_integrated IS NOT NULL
+               AND a.energy_score IS NOT NULL
+               AND t.parsed_date IS NOT NULL",
+        )?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(CalibrationRow {
+                    track_id: row.get(0)?,
+                    lufs: row.get(1)?,
+                    scores: [
+                        row.get(2)?,  // energy
+                        row.get(3)?,  // intensity
+                        row.get(4)?,  // groove
+                        row.get(5)?,  // improvisation
+                        row.get(6)?,  // tightness
+                        row.get(7)?,  // build_quality
+                        row.get(8)?,  // exploratory
+                        row.get(9)?,  // transcendence
+                        row.get(10)?, // valence
+                        row.get(11)?, // arousal
+                    ],
+                    parsed_date: row.get(12)?,
+                    parsed_band: row.get(13)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
     }
 }
 

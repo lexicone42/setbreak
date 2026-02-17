@@ -38,6 +38,7 @@ pub struct Track {
 }
 
 /// Analysis results to store for a track.
+#[derive(Default)]
 pub struct NewAnalysis {
     pub track_id: i64,
 
@@ -346,4 +347,13 @@ pub struct LibraryStats {
     pub total_duration_hours: f64,
     pub formats: Vec<(String, i64)>,
     pub bands: Vec<(String, i64)>,
+}
+
+/// A row of calibration data: track scores + LUFS + show grouping key.
+pub struct CalibrationRow {
+    pub track_id: i64,
+    pub lufs: f64,
+    pub scores: [Option<f64>; 10], // energy, intensity, groove, improv, tight, build, explor, trans, valence, arousal
+    pub parsed_date: String,
+    pub parsed_band: Option<String>,
 }
