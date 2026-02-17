@@ -39,6 +39,9 @@ walkdir = "2"
 # Native FLAC decoding
 claxon = "0.4"
 
+# Native SHN decoding
+shn = { git = "https://github.com/lexicone42/shorten-rs.git" }
+
 # Errors
 anyhow = "1"
 thiserror = "2"

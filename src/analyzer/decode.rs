@@ -13,6 +13,8 @@ pub enum DecodeError {
     FerrousWaves(String),
     #[error("FLAC decode error: {0}")]
     Flac(String),
+    #[error("SHN decode error: {0}")]
+    Shn(String),
     #[error("ffmpeg not found — required for SHN files")]
     FfmpegNotFound,
     #[error("ffmpeg decode error: {0}")]
@@ -37,6 +39,7 @@ pub fn load_audio(path: &Path) -> Result<AudioFile, DecodeError> {
             AudioFile::load(path).map_err(|e| DecodeError::FerrousWaves(e.to_string()))
         }
         "flac" => load_flac_native(path),
+        "shn" => load_shn_native(path),
         _ => load_via_ffmpeg(path),
     }
 }
@@ -57,6 +60,32 @@ fn load_flac_native(path: &Path) -> Result<AudioFile, DecodeError> {
         .samples()
         .collect::<Result<Vec<i32>, _>>()
         .map_err(|e| DecodeError::Flac(format!("{}: {}", path.display(), e)))?;
+
+    let samples_f32: Vec<f32> = samples_i32.iter().map(|&s| s as f32 / scale).collect();
+
+    let buffer = AudioBuffer::new(samples_f32, sample_rate, channels);
+    Ok(AudioFile {
+        buffer,
+        format: AudioFormat::from_path(path),
+        path: path.display().to_string(),
+    })
+}
+
+/// Decode a Shorten (SHN) file natively using the shn crate.
+fn load_shn_native(path: &Path) -> Result<AudioFile, DecodeError> {
+    let mut reader = shn::ShnReader::open(path)
+        .map_err(|e| DecodeError::Shn(format!("{}: {}", path.display(), e)))?;
+
+    let info = reader.info();
+    let sample_rate = info.sample_rate;
+    let channels = info.channels as usize;
+    let bits_per_sample = info.bits_per_sample;
+    let scale = 2_f32.powi(bits_per_sample as i32 - 1);
+
+    let samples_i32: Vec<i32> = reader
+        .samples()
+        .collect::<Result<Vec<i32>, _>>()
+        .map_err(|e| DecodeError::Shn(format!("{}: {}", path.display(), e)))?;
 
     let samples_f32: Vec<f32> = samples_i32.iter().map(|&s| s as f32 / scale).collect();
 
