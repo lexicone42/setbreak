@@ -275,7 +275,14 @@ fn exploratory_score(a: &NewAnalysis) -> f64 {
 // ── Transcendence Score (0-100) ───────────────────────────────────────
 // The "peak experience" composite — everything comes together.
 // Uses peak intensity, crest factor, groove×energy synergy, spectral richness.
+// Requires >= 60s of audio — shorter clips produce extreme variance/peak ratios
+// that inflate the score unreliably.
 fn transcendence_score(a: &NewAnalysis) -> f64 {
+    let duration = a.duration.unwrap_or(0.0);
+    if duration < 60.0 {
+        return 0.0;
+    }
+
     // 1. Peak intensity ratio (25 pts): how far peaks exceed average
     // peak_energy range: 0-0.38, energy_level range: 0-0.51
     let peak_e = a.peak_energy.unwrap_or(0.0);
