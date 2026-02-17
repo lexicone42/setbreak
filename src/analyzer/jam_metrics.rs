@@ -150,33 +150,37 @@ fn groove_score(a: &NewAnalysis) -> f64 {
 
 // ── Improvisation Score (0-100) ───────────────────────────────────────
 // How much the music departs from repetitive structure.
-// Uses non-repetition, chord richness, timbral variety, and structural transitions.
+// Uses non-repetition, timbral variety, duration-normalized structural density,
+// and tonal ambiguity (mode clarity).
 fn improvisation_score(a: &NewAnalysis) -> f64 {
-    // 1. Non-repetition (25 pts): low repetition similarity = improvised
+    // 1. Non-repetition (30 pts): low repetition similarity = improvised
     // Library range: 0.80-0.99, avg 0.90
     let rep_sim = a.repetition_similarity.unwrap_or(0.9);
-    let non_rep = (1.0 - (rep_sim - 0.75) / 0.25).clamp(0.0, 1.0);
-    let non_rep_contrib = non_rep * 25.0;
+    let non_rep = (1.0 - (rep_sim - 0.80) / 0.20).clamp(0.0, 1.0);
+    let non_rep_contrib = non_rep * 30.0;
 
-    // 2. Chord richness (25 pts): more unique chords = more harmonic exploration
-    // Library range: 5-24 chords, avg 20
-    let chords = a.chord_count.unwrap_or(0) as f64;
-    let chord_norm = ((chords - 3.0) / 18.0).clamp(0.0, 1.0);
-    let chord_contrib = chord_norm * 25.0;
-
-    // 3. Timbral variety (25 pts): high centroid std = exploring tonal space
-    // Library range: 388-3414, avg 970 (inverse of groove's timbral consistency)
+    // 2. Timbral variety (25 pts): high centroid std = exploring tonal space
+    // Library range: 144-3595, avg 991
     let centroid_std = a.spectral_centroid_std.unwrap_or(500.0);
-    let timbre_variety = ((centroid_std - 400.0) / 2500.0).clamp(0.0, 1.0);
+    let timbre_variety = ((centroid_std - 200.0) / 3000.0).clamp(0.0, 1.0);
     let timbre_contrib = timbre_variety * 25.0;
 
-    // 4. Structural variety (25 pts): transitions between sections
-    // Library range: 0-190, avg 11
+    // 3. Structural density (25 pts): transitions per minute, not raw count
+    // Normalizes for duration so a 5-min song with 10 transitions scores
+    // higher than a 20-min song with 10.
     let transitions = a.transition_count.unwrap_or(0) as f64;
-    let trans_norm = (transitions / 30.0).clamp(0.0, 1.0);
+    let duration_secs = a.duration.unwrap_or(180.0).max(30.0);
+    let trans_per_min = transitions * 60.0 / duration_secs;
+    let trans_norm = (trans_per_min / 5.0).clamp(0.0, 1.0);
     let trans_contrib = trans_norm * 25.0;
 
-    (non_rep_contrib + chord_contrib + timbre_contrib + trans_contrib).clamp(0.0, 100.0)
+    // 4. Tonal ambiguity (20 pts): low mode clarity = harmonically wandering
+    // Library range: 0.05-0.51, avg 0.15
+    let mode_clarity = a.mode_clarity.unwrap_or(0.15);
+    let tonal_ambiguity = (1.0 - (mode_clarity - 0.05) / 0.45).clamp(0.0, 1.0);
+    let tonal_contrib = tonal_ambiguity * 20.0;
+
+    (non_rep_contrib + timbre_contrib + trans_contrib + tonal_contrib).clamp(0.0, 100.0)
 }
 
 // ── Tightness Score (0-100) ───────────────────────────────────────────

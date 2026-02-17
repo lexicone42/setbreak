@@ -73,8 +73,11 @@ impl Database {
         if version < 7 {
             self.migrate_v7()?;
         }
+        if version < 8 {
+            self.migrate_v8()?;
+        }
 
-        self.conn.pragma_update(None, "user_version", 7)?;
+        self.conn.pragma_update(None, "user_version", 8)?;
         Ok(())
     }
 
@@ -446,6 +449,12 @@ impl Database {
     /// V7: Recording type classification (live / studio / live_album)
     fn migrate_v7(&self) -> Result<()> {
         try_add_column(&self.conn, "tracks", "recording_type TEXT")?;
+        Ok(())
+    }
+
+    /// V8: Data quality classification (ok / suspect / garbage)
+    fn migrate_v8(&self) -> Result<()> {
+        try_add_column(&self.conn, "tracks", "data_quality TEXT DEFAULT 'ok'")?;
         Ok(())
     }
 }

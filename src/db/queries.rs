@@ -593,7 +593,8 @@ impl Database {
                 COALESCE(a.valence_score, 0), COALESCE(a.arousal_score, 0)
              FROM analysis_results a
              JOIN tracks t ON t.id = a.track_id
-             WHERE a.{score_column} IS NOT NULL"
+             WHERE a.{score_column} IS NOT NULL
+               AND COALESCE(t.data_quality, 'ok') != 'garbage'"
         );
 
         let mut params_vec: Vec<Box<dyn rusqlite::types::ToSql>> = vec![];
@@ -668,6 +669,7 @@ impl Database {
              FROM analysis_results a
              JOIN tracks t ON t.id = a.track_id
              WHERE (t.parsed_title LIKE ?1 OR t.title LIKE ?1)
+               AND COALESCE(t.data_quality, 'ok') != 'garbage'
              ORDER BY a.{order_col} DESC
              LIMIT ?2"
         );
@@ -713,7 +715,8 @@ impl Database {
                 COALESCE(a.valence_score, 0), COALESCE(a.arousal_score, 0)
              FROM analysis_results a
              JOIN tracks t ON t.id = a.track_id
-             WHERE t.parsed_date = ?1 OR t.date = ?1
+             WHERE (t.parsed_date = ?1 OR t.date = ?1)
+               AND COALESCE(t.data_quality, 'ok') != 'garbage'
              ORDER BY COALESCE(t.parsed_disc, t.disc_number, 1),
                       COALESCE(t.parsed_track, t.track_number, 999)"
         )?;
@@ -829,6 +832,7 @@ impl Database {
              JOIN tracks t ON t.id = s.similar_track_id
              JOIN analysis_results a ON a.track_id = s.similar_track_id
              WHERE s.track_id = ?1
+               AND COALESCE(t.data_quality, 'ok') != 'garbage'
              ORDER BY s.rank
              LIMIT ?2"
         )?;
@@ -869,6 +873,7 @@ impl Database {
                  JOIN analysis_results a ON a.track_id = t.id
                  WHERE (t.parsed_title LIKE ?1 OR t.title LIKE ?1)
                    AND (t.parsed_date = ?2 OR t.date = ?2)
+                   AND COALESCE(t.data_quality, 'ok') != 'garbage'
                  LIMIT 1",
                 format!("%{song}%"),
             )
@@ -878,6 +883,7 @@ impl Database {
                  FROM tracks t
                  JOIN analysis_results a ON a.track_id = t.id
                  WHERE (t.parsed_title LIKE ?1 OR t.title LIKE ?1)
+                   AND COALESCE(t.data_quality, 'ok') != 'garbage'
                  ORDER BY a.duration DESC
                  LIMIT 1",
                 format!("%{song}%"),
@@ -986,6 +992,7 @@ impl Database {
              FROM tracks t
              JOIN analysis_results a ON a.track_id = t.id
              WHERE t.parsed_date IS NOT NULL
+               AND COALESCE(t.data_quality, 'ok') != 'garbage'
                AND (t.parsed_title LIKE '%->%'
                     OR t.parsed_title LIKE '%--%>'
                     OR t.parsed_title LIKE '% >')
@@ -1196,6 +1203,37 @@ impl Database {
         self.conn.execute(
             "UPDATE tracks SET recording_type = ?1 WHERE id = ?2",
             params![recording_type, track_id],
+        )?;
+        Ok(())
+    }
+
+    /// Get all analyzed tracks with their SNR and clipping data for quality classification.
+    /// Returns (track_id, file_path, snr_db, clipping_ratio).
+    pub fn get_tracks_for_quality_check(&self) -> Result<Vec<(i64, String, Option<f64>, Option<f64>)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT t.id, t.file_path, a.snr_db, a.clipping_ratio
+             FROM tracks t
+             JOIN analysis_results a ON a.track_id = t.id"
+        )?;
+
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<f64>>(2)?,
+                    row.get::<_, Option<f64>>(3)?,
+                ))
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    /// Update a single track's data_quality flag.
+    pub fn update_data_quality(&self, track_id: i64, quality: &str) -> Result<()> {
+        self.conn.execute(
+            "UPDATE tracks SET data_quality = ?1 WHERE id = ?2",
+            params![quality, track_id],
         )?;
         Ok(())
     }

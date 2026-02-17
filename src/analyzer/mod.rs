@@ -67,6 +67,35 @@ pub fn rescore_tracks(db: &Database) -> Result<RescoreResult, AnalyzeError> {
     Ok(RescoreResult { rescored: total })
 }
 
+/// Classify data quality for a single track based on SNR, clipping, and path hints.
+/// Returns "ok", "suspect", or "garbage".
+pub fn classify_data_quality(
+    snr_db: Option<f64>,
+    clipping_ratio: Option<f64>,
+    file_path: &str,
+) -> &'static str {
+    // Path-based detection: DTS directories contain bitstream-as-PCM
+    let path_lower = file_path.to_lowercase();
+    if path_lower.contains(".dts") || path_lower.contains("/dts/") || path_lower.contains("-dts-") {
+        return "garbage";
+    }
+
+    let snr = snr_db.unwrap_or(60.0); // default to healthy if no data
+    let clip = clipping_ratio.unwrap_or(0.0);
+
+    if snr < 5.0 {
+        "garbage" // DTS bitstreams produce ~0-3 dB SNR
+    } else if snr < 15.0 && clip > 0.05 {
+        "garbage" // low SNR + high clipping = corrupt
+    } else if snr < 20.0 {
+        "suspect"
+    } else {
+        "ok"
+    }
+}
+
+
+
 /// Full result from analyzing a single track (before DB write).
 struct TrackAnalysis {
     track_id: i64,

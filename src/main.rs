@@ -218,6 +218,9 @@ enum Commands {
     /// Classify tracks as live, studio, or live_album (backfill existing tracks)
     Classify,
 
+    /// Flag tracks with bad audio quality (DTS bitstreams, corrupt files)
+    QualityCheck,
+
     /// Show library statistics
     Stats,
 }
@@ -543,6 +546,37 @@ fn main() -> Result<()> {
             println!(
                 "Classify complete: {} tracks — {} live, {} studio, {} live_album, {} unknown",
                 total, live, studio, live_album, unknown
+            );
+        }
+
+        Commands::QualityCheck => {
+            let tracks = db.get_tracks_for_quality_check()
+                .context("Failed to load tracks for quality check")?;
+            let total = tracks.len();
+
+            let tx = db.conn.unchecked_transaction()?;
+            let mut ok = 0usize;
+            let mut suspect = 0usize;
+            let mut garbage = 0usize;
+
+            for (id, file_path, snr_db, clipping_ratio) in &tracks {
+                let quality = setbreak::analyzer::classify_data_quality(*snr_db, *clipping_ratio, file_path);
+                match quality {
+                    "ok" => ok += 1,
+                    "suspect" => suspect += 1,
+                    "garbage" => garbage += 1,
+                    _ => ok += 1,
+                }
+                tx.execute(
+                    "UPDATE tracks SET data_quality = ?1 WHERE id = ?2",
+                    rusqlite::params![quality, id],
+                )?;
+            }
+            tx.commit()?;
+
+            println!(
+                "Quality check complete: {} tracks — {} ok, {} suspect, {} garbage",
+                total, ok, suspect, garbage
             );
         }
 

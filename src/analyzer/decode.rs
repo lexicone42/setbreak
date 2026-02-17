@@ -19,14 +19,17 @@ pub enum DecodeError {
     FfmpegNotFound,
     #[error("ffmpeg decode error: {0}")]
     Ffmpeg(String),
+    #[error("DTS bitstream detected — not decodable as PCM")]
+    DtsBitstream,
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 }
 
 /// Load an audio file, using the best available decoder for each format:
-/// - WAV/MP3: ferrous-waves (symphonia)
+/// - WAV/MP3/AIFF/OGG/M4A/AAC/OPUS: ferrous-waves (symphonia — all codecs compiled in)
 /// - FLAC: claxon (native Rust, no external deps)
-/// - SHN/OGG/etc: ffmpeg subprocess
+/// - SHN: shorten-rs (native Rust)
+/// - APE/WV/DSD/etc: ffmpeg subprocess (no native Rust decoder available)
 pub fn load_audio(path: &Path) -> Result<AudioFile, DecodeError> {
     let ext = path
         .extension()
@@ -34,14 +37,24 @@ pub fn load_audio(path: &Path) -> Result<AudioFile, DecodeError> {
         .unwrap_or("")
         .to_lowercase();
 
-    match ext.as_str() {
-        "wav" | "mp3" => {
-            AudioFile::load(path).map_err(|e| DecodeError::FerrousWaves(e.to_string()))
+    let audio = match ext.as_str() {
+        // Native via symphonia (compiled into ferrous-waves with features=["all"])
+        "wav" | "mp3" | "aif" | "aiff" | "ogg" | "m4a" | "aac" | "opus" => {
+            AudioFile::load(path).map_err(|e| DecodeError::FerrousWaves(e.to_string()))?
         }
-        "flac" => load_flac_native(path),
-        "shn" => load_shn_native(path),
-        _ => load_via_ffmpeg(path),
+        // Native via dedicated Rust crates
+        "flac" => load_flac_native(path)?,
+        "shn" => load_shn_native(path)?,
+        // Fallback to ffmpeg for formats without Rust decoders (APE, WavPack, DSD)
+        _ => load_via_ffmpeg(path)?,
+    };
+
+    // Check for DTS bitstream masquerading as PCM
+    if is_dts_bitstream(&audio) {
+        return Err(DecodeError::DtsBitstream);
     }
+
+    Ok(audio)
 }
 
 /// Decode a FLAC file natively using claxon, bypassing ferrous-waves's symphonia
@@ -139,4 +152,31 @@ fn load_via_ffmpeg(path: &Path) -> Result<AudioFile, DecodeError> {
     std::fs::remove_file(&tmp_wav).ok();
 
     audio
+}
+
+/// Check if decoded audio is actually a DTS bitstream masquerading as PCM.
+///
+/// DTS bitstreams have a sync word `0x7FFE8001` that appears in the first
+/// few kilobytes when decoded as 16-bit PCM. In floating-point samples,
+/// this manifests as specific near-max-amplitude patterns.
+///
+/// A simpler heuristic: DTS-as-PCM sounds like white noise, so check if the
+/// first few thousand samples have extremely high variance with values
+/// constantly near ±1.0 (the hallmark of a bitstream interpreted as audio).
+fn is_dts_bitstream(audio: &AudioFile) -> bool {
+    let samples = &audio.buffer.samples;
+    if samples.len() < 4096 {
+        return false;
+    }
+
+    // Check the first 4096 samples for DTS characteristics:
+    // 1. High proportion of near-max-amplitude values (> 0.9 or < -0.9)
+    // 2. Mean very close to 0 (random-looking)
+    let check = &samples[..4096];
+    let near_max = check.iter().filter(|&&s| s.abs() > 0.9).count();
+    let near_max_ratio = near_max as f64 / check.len() as f64;
+
+    // DTS bitstreams typically have >30% of samples near max amplitude
+    // Real audio almost never exceeds 10% in the first few seconds
+    near_max_ratio > 0.25
 }
