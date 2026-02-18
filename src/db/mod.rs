@@ -76,8 +76,17 @@ impl Database {
         if version < 8 {
             self.migrate_v8()?;
         }
+        if version < 9 {
+            self.migrate_v9()?;
+        }
+        if version < 10 {
+            self.migrate_v10()?;
+        }
+        if version < 11 {
+            self.migrate_v11()?;
+        }
 
-        self.conn.pragma_update(None, "user_version", 8)?;
+        self.conn.pragma_update(None, "user_version", 11)?;
         Ok(())
     }
 
@@ -455,6 +464,49 @@ impl Database {
     /// V8: Data quality classification (ok / suspect / garbage)
     fn migrate_v8(&self) -> Result<()> {
         try_add_column(&self.conn, "tracks", "data_quality TEXT DEFAULT 'ok'")?;
+        Ok(())
+    }
+
+    /// V9: Perceptual loudness dynamics + new per-frame derived features
+    fn migrate_v9(&self) -> Result<()> {
+        try_add_column(&self.conn, "analysis_results", "loudness_std REAL")?;
+        try_add_column(&self.conn, "analysis_results", "peak_loudness REAL")?;
+        try_add_column(&self.conn, "analysis_results", "spectral_flux_skewness REAL")?;
+        try_add_column(&self.conn, "analysis_results", "spectral_centroid_slope REAL")?;
+        try_add_column(&self.conn, "analysis_results", "energy_buildup_ratio REAL")?;
+        try_add_column(&self.conn, "analysis_results", "bass_treble_ratio_mean REAL")?;
+        try_add_column(&self.conn, "analysis_results", "bass_treble_ratio_std REAL")?;
+        try_add_column(&self.conn, "analysis_results", "onset_density_std REAL")?;
+        try_add_column(&self.conn, "analysis_results", "loudness_buildup_slope REAL")?;
+        try_add_column(&self.conn, "analysis_results", "peak_energy_time REAL")?;
+        Ok(())
+    }
+
+    /// V10: Pitch-derived + creative per-frame features
+    fn migrate_v10(&self) -> Result<()> {
+        // Pitch-derived
+        try_add_column(&self.conn, "analysis_results", "pitch_contour_std REAL")?;
+        try_add_column(&self.conn, "analysis_results", "pitch_clarity_mean REAL")?;
+        try_add_column(&self.conn, "analysis_results", "pitched_frame_ratio REAL")?;
+        // Creative derivations
+        try_add_column(&self.conn, "analysis_results", "mfcc_flux_mean REAL")?;
+        try_add_column(&self.conn, "analysis_results", "onset_interval_entropy REAL")?;
+        try_add_column(&self.conn, "analysis_results", "spectral_centroid_kurtosis REAL")?;
+        try_add_column(&self.conn, "analysis_results", "bass_energy_slope REAL")?;
+        try_add_column(&self.conn, "analysis_results", "spectral_bandwidth_slope REAL")?;
+        try_add_column(&self.conn, "analysis_results", "loudness_dynamic_spread REAL")?;
+        Ok(())
+    }
+
+    /// V11: Beat timing, tension/energy depth, periodicity, cross-feature features
+    fn migrate_v11(&self) -> Result<()> {
+        try_add_column(&self.conn, "analysis_results", "beat_regularity REAL")?;
+        try_add_column(&self.conn, "analysis_results", "peak_tension REAL")?;
+        try_add_column(&self.conn, "analysis_results", "tension_range REAL")?;
+        try_add_column(&self.conn, "analysis_results", "energy_peak_count INTEGER")?;
+        try_add_column(&self.conn, "analysis_results", "energy_valley_depth_mean REAL")?;
+        try_add_column(&self.conn, "analysis_results", "rhythmic_periodicity_strength REAL")?;
+        try_add_column(&self.conn, "analysis_results", "spectral_loudness_correlation REAL")?;
         Ok(())
     }
 }

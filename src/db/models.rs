@@ -122,6 +122,44 @@ pub struct NewAnalysis {
     pub true_peak_dbfs: Option<f64>,
     pub crest_factor: Option<f64>,
     pub energy_level: Option<f64>,
+    pub loudness_std: Option<f64>,            // std of short-term loudness (3s window)
+    pub peak_loudness: Option<f64>,           // max momentary loudness
+    pub spectral_flux_skewness: Option<f64>,  // skewness of flux: +ve = percussive hits, -ve = sustained
+    pub spectral_centroid_slope: Option<f64>, // brightness trend over time (build = positive)
+    pub energy_buildup_ratio: Option<f64>,    // energy last_third / first_third
+    pub bass_treble_ratio_mean: Option<f64>,  // mean bass/(high+presence) per frame
+    pub bass_treble_ratio_std: Option<f64>,   // std of bass/treble ratio
+    pub onset_density_std: Option<f64>,       // variability of onset density across 10s windows
+    pub loudness_buildup_slope: Option<f64>,  // linear trend of short-term loudness
+    pub peak_energy_time: Option<f64>,        // normalized time (0-1) of peak energy
+
+    // Pitch-derived per-frame features
+    pub pitch_contour_std: Option<f64>,      // std of detected pitch frequencies (melodic range)
+    pub pitch_clarity_mean: Option<f64>,     // mean pitch clarity across frames
+    pub pitched_frame_ratio: Option<f64>,    // fraction of frames with detected pitch
+
+    // Creative per-frame derivations
+    pub mfcc_flux_mean: Option<f64>,         // mean frame-to-frame MFCC distance (timbral change rate)
+    pub onset_interval_entropy: Option<f64>, // Shannon entropy of inter-onset intervals (rhythmic predictability)
+    pub spectral_centroid_kurtosis: Option<f64>, // excess kurtosis of centroid distribution
+    pub bass_energy_slope: Option<f64>,      // linear trend of bass energy over time
+    pub spectral_bandwidth_slope: Option<f64>, // linear trend of bandwidth (broadening/narrowing)
+    pub loudness_dynamic_spread: Option<f64>,  // range of short-term loudness (max - min LUFS)
+
+    // Beat timing features
+    pub beat_regularity: Option<f64>,           // CV of inter-beat intervals (0 = metronome, high = irregular)
+
+    // Tension/energy profile features
+    pub peak_tension: Option<f64>,              // max tension value (0-1 scale)
+    pub tension_range: Option<f64>,             // max - min tension (dynamic tension range)
+    pub energy_peak_count: Option<i32>,         // number of energy climax peaks
+    pub energy_valley_depth_mean: Option<f64>,  // mean valley depth relative to mean peak energy
+
+    // Periodicity features
+    pub rhythmic_periodicity_strength: Option<f64>, // strength of strongest periodic event (0-1)
+
+    // Cross-feature correlations
+    pub spectral_loudness_correlation: Option<f64>, // Pearson r between centroid and loudness
 
     // Musical
     pub estimated_key: Option<String>,
