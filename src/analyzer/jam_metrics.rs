@@ -93,8 +93,11 @@ fn intensity_score(a: &NewAnalysis) -> f64 {
 
 // ── Groove Score (0-100) ──────────────────────────────────────────────
 // How steady and compelling the rhythm is.
-// v2: recalibrated for real differentiation. Old formula gave 88.6 avg with 33% at 100.
-// Key change: replaced centroid_std with bass steadiness, tightened all thresholds.
+// v3: Rebalanced weights — onset sweet spot barely differentiates (95%+ of tracks
+// score full marks), so reduced from 20→10 pts and gave 10 to flux CV (the real
+// differentiator). This shifts avg from ~51 to ~45 and widens effective range.
+// Note: Baker's Dozen Phish scores low because 24-bit recordings trigger 3x more
+// onset detections (~25/sec vs normal ~9/sec) — a ferrous-waves issue to fix later.
 fn groove_score(a: &NewAnalysis) -> f64 {
     let duration = a.duration.unwrap_or(1.0).max(1.0);
     let onset_count = a.onset_count.unwrap_or(0) as f64;
@@ -110,28 +113,29 @@ fn groove_score(a: &NewAnalysis) -> f64 {
     let bass_std = a.sub_band_bass_std.unwrap_or(0.0);
     let rep_sim = a.repetition_similarity.unwrap_or(0.85);
 
-    // 1. Onset rate sweet spot (20 pts): 7-9/sec is the groove zone (tighter than v1's 6-10)
-    // Library: 1.1-13.2/sec, avg 8.3
+    // 1. Onset rate sweet spot (10 pts): 6-10/sec is the groove zone
+    // Library: avg 9.0/sec. Most tracks in 7-10 range → this barely differentiates,
+    // but still correctly penalizes very sparse (Space) and over-detected tracks.
     let onset_rate = onset_count / duration;
-    let onset_sweet = if onset_rate < 5.0 {
-        onset_rate / 5.0
-    } else if onset_rate < 7.0 {
-        0.6 + 0.4 * (onset_rate - 5.0) / 2.0
-    } else if onset_rate <= 9.0 {
+    let onset_sweet = if onset_rate < 4.0 {
+        onset_rate / 4.0
+    } else if onset_rate < 6.0 {
+        0.5 + 0.5 * (onset_rate - 4.0) / 2.0
+    } else if onset_rate <= 10.0 {
         1.0
-    } else if onset_rate <= 11.0 {
-        1.0 - 0.4 * (onset_rate - 9.0) / 2.0
+    } else if onset_rate <= 13.0 {
+        1.0 - 0.5 * (onset_rate - 10.0) / 3.0
     } else {
-        (0.6 - (onset_rate - 11.0) / 5.0).max(0.0)
+        (0.5 - (onset_rate - 13.0) / 20.0).max(0.0)
     };
-    let onset_contrib = onset_sweet.clamp(0.0, 1.0) * 20.0;
+    let onset_contrib = onset_sweet.clamp(0.0, 1.0) * 10.0;
 
-    // 2. Rhythmic consistency (30 pts): flux CV — strongest differentiator
-    // Library flux_cv: avg 0.706, range 0.05-3.31
-    // v1 used (1-(cv-0.3)/1.2) which was too generous. Now: direct (1-cv).
+    // 2. Rhythmic consistency (40 pts): flux CV — strongest differentiator
+    // Library flux_cv: avg 0.666, range 0.05-4.0
+    // Tight grooves: 0.3-0.5, loose jams: 0.8-1.5+
     let flux_cv = if flux_mean > 0.5 { flux_std / flux_mean } else { 2.0 };
     let flux_score = (1.0 - flux_cv).clamp(0.0, 1.0);
-    let flux_contrib = flux_score * 30.0;
+    let flux_contrib = flux_score * 40.0;
 
     // 3. Bass steadiness (25 pts): groove lives in the bass
     // Low bass CV = locked-in bass pattern. Library bass_cv: avg 0.64, range 0.07-1.75
@@ -141,7 +145,6 @@ fn groove_score(a: &NewAnalysis) -> f64 {
 
     // 4. Pattern repetition (25 pts): groove IS repetition
     // Library: avg 0.90, range 0.80-0.999
-    // v1 mapped 0.75-1.0, now 0.85-1.0 — only high repetition scores well
     let rep_score = ((rep_sim - 0.85) / 0.15).clamp(0.0, 1.0);
     let rep_contrib = rep_score * 25.0;
 
@@ -184,42 +187,60 @@ fn improvisation_score(a: &NewAnalysis) -> f64 {
 }
 
 // ── Tightness Score (0-100) ───────────────────────────────────────────
-// How well the band is locked in together.
-// Uses pitch stability, flux consistency, beat structure, and tonal consistency.
+// How well the band is locked in together — rhythmic precision, consistent
+// timbral delivery, steady energy. Differentiates tight grooves (Sugar Magnolia,
+// Fire on the Mountain) from free-form playing (Drums, Space, Dark Star jams).
+//
+// v3: Dropped pitch_stability (anti-correlated — ambient/drone scores higher than
+// tight grooves) and beat-onset ratio (doesn't differentiate — 97% of tracks in
+// the sweet spot). Added ZCR consistency and rhythmic presence.
 fn tightness_score(a: &NewAnalysis) -> f64 {
-    // 1. Pitch stability (25 pts): steady pitch = musicians locked in
-    // Library range: 0.33-0.91, avg 0.65
-    let pitch_stab = a.pitch_stability.unwrap_or(0.5);
-    let pitch_contrib = pitch_stab.clamp(0.0, 1.0) * 25.0;
+    let duration = a.duration.unwrap_or(1.0).max(1.0);
+    let onset_count = a.onset_count.unwrap_or(0) as f64;
 
-    // 2. Spectral flux consistency (25 pts): low flux CV = consistent energy
-    // Same concept as groove but measuring "tightness" not "groove feel"
+    // 1. Flux consistency (30 pts): low CV = steady energy delivery — best differentiator
+    // Library: avg CV 0.666, tight songs 0.4-0.7, Drums 0.9-1.7
     let flux_mean = a.spectral_flux_mean.unwrap_or(0.0);
     let flux_std = a.spectral_flux_std.unwrap_or(0.0);
     let flux_cv = if flux_mean > 0.5 { flux_std / flux_mean } else { 2.0 };
-    let flux_score = (1.0 - (flux_cv - 0.3) / 1.2).clamp(0.0, 1.0);
-    let flux_contrib = flux_score * 25.0;
+    // Map: 0.3 → 1.0, 1.1 → 0.0
+    let flux_score = ((1.1 - flux_cv) / 0.8).clamp(0.0, 1.0);
+    let flux_contrib = flux_score * 30.0;
 
-    // 3. Beat-onset ratio (25 pts): if most onsets align with beats, rhythm is tight
-    let beats = a.beat_count.unwrap_or(0) as f64;
-    let onsets = a.onset_count.unwrap_or(1).max(1) as f64;
-    let beat_ratio = (beats / onsets).clamp(0.0, 1.0);
-    let beat_strength = if beat_ratio < 0.1 {
-        beat_ratio * 5.0
-    } else if beat_ratio <= 0.8 {
-        1.0
-    } else {
-        0.8 + 0.2 * (1.0 - beat_ratio) / 0.2
-    };
-    let beat_contrib = beat_strength.clamp(0.0, 1.0) * 25.0;
+    // 2. ZCR consistency (25 pts): low ZCR CV = consistent timbral character
+    // Library: avg CV 0.488, tight songs 0.2-0.5, Drums 0.5-1.2
+    let zcr_mean = a.zcr_mean.unwrap_or(0.0);
+    let zcr_std = a.zcr_std.unwrap_or(0.0);
+    let zcr_cv = if zcr_mean > 0.001 { zcr_std / zcr_mean } else { 1.5 };
+    // Map: 0.2 → 1.0, 1.0 → 0.0
+    let zcr_score = ((1.0 - zcr_cv) / 0.8).clamp(0.0, 1.0);
+    let zcr_contrib = zcr_score * 25.0;
 
-    // 4. Tonal consistency (25 pts): low spectral flatness std = consistent character
-    // Library range: 0.05-0.26, avg 0.09
+    // 3. Spectral flatness consistency (25 pts): low std = consistent tonal character
+    // Library: avg 0.088, tight songs 0.025-0.10, Drums 0.05-0.18
     let flat_std = a.spectral_flatness_std.unwrap_or(0.15);
-    let tonal_score = (1.0 - (flat_std - 0.04) / 0.22).clamp(0.0, 1.0);
-    let tonal_contrib = tonal_score * 25.0;
+    // Map: 0.02 → 1.0, 0.16 → 0.0
+    let flat_score = ((0.16 - flat_std) / 0.14).clamp(0.0, 1.0);
+    let flat_contrib = flat_score * 25.0;
 
-    (pitch_contrib + flux_contrib + beat_contrib + tonal_contrib).clamp(0.0, 100.0)
+    // 4. Rhythmic presence (20 pts): steady onset rate in groove zone = tight
+    // Penalizes Space/ambient (sparse onsets) and chaotic playing (too many).
+    // Library: avg 9/sec, groove zone 5-11/sec
+    let onset_rate = if duration > 0.0 { onset_count / duration } else { 0.0 };
+    let rhythm_score = if onset_rate < 3.0 {
+        onset_rate / 3.0 // very sparse = not tight
+    } else if onset_rate < 5.0 {
+        0.5 + 0.5 * (onset_rate - 3.0) / 2.0 // ramping up
+    } else if onset_rate <= 11.0 {
+        1.0 // groove zone
+    } else if onset_rate <= 14.0 {
+        1.0 - 0.5 * (onset_rate - 11.0) / 3.0 // tapering
+    } else {
+        (0.5 - (onset_rate - 14.0) / 20.0).max(0.0) // chaotic
+    };
+    let rhythm_contrib = rhythm_score.clamp(0.0, 1.0) * 20.0;
+
+    (flux_contrib + zcr_contrib + flat_contrib + rhythm_contrib).clamp(0.0, 100.0)
 }
 
 // ── Build Quality Score (0-100) ───────────────────────────────────────
@@ -465,8 +486,21 @@ fn build_quality_from_segments(energies: &[(f64, f64)], duration: f64) -> f64 {
 // ── Exploratory Score (0-100) ─────────────────────────────────────────
 // How much musical territory is covered — timbral, textural, structural.
 // Uses spectral flatness variety, pitch confidence, transition density, mode ambiguity.
+// v2: Added duration gating — short clips (<60s) produce spurious high scores
+// because noise/banter has wide spectral variance and low pitch confidence.
 fn exploratory_score(a: &NewAnalysis) -> f64 {
     let duration = a.duration.unwrap_or(1.0).max(1.0);
+
+    // Duration gate: <60s tracks can't meaningfully demonstrate exploration
+    if duration < 60.0 {
+        return 0.0;
+    }
+    // Gentle ramp 60-120s to avoid cliff edge
+    let duration_factor = if duration < 120.0 {
+        (duration - 60.0) / 60.0
+    } else {
+        1.0
+    };
 
     // 1. Spectral flatness variety (25 pts): variation between tonal and noisy moments
     // Library range: 0.05-0.26, avg 0.09
@@ -493,77 +527,109 @@ fn exploratory_score(a: &NewAnalysis) -> f64 {
     let mode_ambig = (1.0 - (mode_clar - 0.05) / 0.20).clamp(0.0, 1.0);
     let mode_contrib = mode_ambig * 25.0;
 
-    (flat_contrib + pitch_contrib + trans_contrib + mode_contrib).clamp(0.0, 100.0)
+    let raw = (flat_contrib + pitch_contrib + trans_contrib + mode_contrib).clamp(0.0, 100.0);
+    (raw * duration_factor).clamp(0.0, 100.0)
 }
 
 // ── Transcendence Score (0-100) ───────────────────────────────────────
-// The "peak experience" composite — everything comes together.
-// Uses peak intensity, crest factor, groove×energy synergy, spectral richness.
-// Requires >= 60s of audio — shorter clips produce extreme variance/peak ratios
-// that inflate the score unreliably.
+// The "peak experience" composite — sustained intensity where everything clicks.
+// Measures: overall power, peak moments, groove×energy synergy, spectral richness.
+//
+// v2: Replaced crest_factor (anti-correlated — peaky/sparse tracks score high,
+// sustained jams score low). Recalibrated peak_ratio. Removed sqrt compression
+// on synergy. Uses bottleneck approach: both groove AND energy must be high.
+// Requires >= 90s of audio. Ramps 90s→240s so brief high-energy moments
+// (like NYE Auld Lang Syne at 96s) don't dominate over sustained jams.
 fn transcendence_score(a: &NewAnalysis) -> f64 {
     let duration = a.duration.unwrap_or(0.0);
-    if duration < 60.0 {
+    if duration < 90.0 {
         return 0.0;
     }
+    // Gentle ramp: 90s → 0%, 240s → 100%
+    let duration_factor = if duration < 240.0 {
+        (duration - 90.0) / 150.0
+    } else {
+        1.0
+    };
 
-    // 1. Peak intensity ratio (25 pts): how far peaks exceed average
-    // peak_energy range: 0-0.38, energy_level range: 0-0.51
+    // 1. Sustained energy (25 pts): overall power of the track
+    // energy_level: library 0.0-0.56, avg 0.375
+    let energy_level = a.energy_level.unwrap_or(0.0);
+    let energy_norm = (energy_level / 0.45).clamp(0.0, 1.0);
+    let energy_contrib = energy_norm * 25.0;
+
+    // 2. Peak intensity ratio (20 pts): how far peaks exceed average
+    // Library: 0-2.18, avg 0.21. Top jams: 0.3-0.5.
     let peak_e = a.peak_energy.unwrap_or(0.0);
     let avg_e = a.energy_level.unwrap_or(0.001).max(0.001);
     let peak_ratio = peak_e / avg_e;
-    let peak_norm = ((peak_ratio - 0.05) / 0.8).clamp(0.0, 1.0);
-    let peak_contrib = peak_norm * 25.0;
+    // Map: 0 → 0, 0.6 → 1.0
+    let peak_norm = (peak_ratio / 0.6).clamp(0.0, 1.0);
+    let peak_contrib = peak_norm * 20.0;
 
-    // 2. Dynamic peak character (25 pts): crest factor
-    // Library range: 3.15-35.6, avg 9.56
-    let crest = a.crest_factor.unwrap_or(5.0);
-    let crest_norm = ((crest - 3.0) / 25.0).clamp(0.0, 1.0);
-    let crest_contrib = crest_norm * 25.0;
-
-    // 3. Groove × Energy synergy (30 pts): transcendence needs both
+    // 3. Groove × Energy synergy (30 pts): transcendence needs BOTH —
+    // use bottleneck approach (weakest link limits the score)
     let groove = groove_score(a);
     let energy = energy_score(a);
-    let groove_energy = (groove / 100.0) * (energy / 100.0);
-    let synergy_contrib = groove_energy.sqrt() * 30.0;
+    // min(groove, energy) — the lower one constrains transcendence.
+    // A high-energy track with no groove (Drums) can't be transcendent,
+    // and a groovy quiet track can't either.
+    let bottleneck = groove.min(energy);
+    // Map: 0 → 0, 70 → full marks (groove/energy rarely exceed 70)
+    let synergy_norm = (bottleneck / 70.0).clamp(0.0, 1.0);
+    let synergy_contrib = synergy_norm * 30.0;
 
-    // 4. Spectral richness (20 pts): high flux = lots of spectral activity
-    // Library range: 0.73-69, avg 23
+    // 4. Spectral richness (25 pts): full-band participation, complex overtones
+    // Library: 0.5-90, avg 29
     let flux = a.spectral_flux_mean.unwrap_or(0.0);
-    let flux_norm = (flux / 50.0).clamp(0.0, 1.0);
-    let flux_contrib = flux_norm * 20.0;
+    let flux_norm = (flux / 60.0).clamp(0.0, 1.0);
+    let flux_contrib = flux_norm * 25.0;
 
-    (peak_contrib + crest_contrib + synergy_contrib + flux_contrib).clamp(0.0, 100.0)
+    let raw = (energy_contrib + peak_contrib + synergy_contrib + flux_contrib).clamp(0.0, 100.0);
+    (raw * duration_factor).clamp(0.0, 100.0)
 }
 
 // ── Valence Score (0-100) ──────────────────────────────────────────────
-// Russell circumplex horizontal axis: happy (high) ↔ sad (low).
-// Inputs: mode (major/minor), tempo, spectral centroid brightness, harmonic simplicity.
+// Russell circumplex horizontal axis: happy/positive (high) ↔ sad/dark (low).
+//
+// v2: Complete redesign. Previous formula used mode (97.6% minor — modal music
+// misclassified), harmonic_complexity (degenerate at 0.99), and tempo_bpm
+// (only 28 distinct values, clustered at 190). Those ferrous-waves features need
+// fixing at the source. This version uses acoustic correlates that actually
+// differentiate: brightness, timbral balance, rhythmic activity, pitch clarity.
 fn valence_score(a: &NewAnalysis) -> f64 {
-    // Mode component (30 pts): major → happy, minor → sad
-    let mode_val = match &a.estimated_key {
-        Some(k) if k.contains("major") => 1.0,
-        Some(k) if k.contains("minor") => 0.0,
-        _ => 0.5, // Unknown/ambiguous
-    };
-    let mode_contrib = mode_val * 30.0;
+    let duration = a.duration.unwrap_or(1.0).max(1.0);
 
-    // Tempo component (25 pts): faster → happier. 60 bpm = 0, 180 bpm = 1
-    let tempo = a.tempo_bpm.unwrap_or(120.0);
-    let tempo_norm = ((tempo - 60.0) / 120.0).clamp(0.0, 1.0);
-    let tempo_contrib = tempo_norm * 25.0;
-
-    // Brightness component (25 pts): brighter timbre → happier
+    // 1. Brightness (30 pts): spectral centroid — strongest single proxy for valence
+    // Brighter timbre correlates with perceived positivity.
+    // Library: 1190-11067, avg 3764, 3455 distinct values — excellent spread
     let centroid = a.spectral_centroid_mean.unwrap_or(0.0);
-    let bright_norm = ((centroid - 500.0) / 4500.0).clamp(0.0, 1.0);
-    let bright_contrib = bright_norm * 25.0;
+    let bright_norm = ((centroid - 1500.0) / 6000.0).clamp(0.0, 1.0);
+    let bright_contrib = bright_norm * 30.0;
 
-    // Simplicity component (20 pts): simpler harmony → happier
-    let complexity = a.harmonic_complexity.unwrap_or(0.5);
-    let simplicity = 1.0 - complexity.clamp(0.0, 1.0);
-    let simple_contrib = simplicity * 20.0;
+    // 2. Treble balance (25 pts): high+presence energy vs bass energy
+    // Higher ratio = brighter, more "open" sounding = more positive
+    // Low ratio = bass-heavy, darker = lower valence
+    let bass = a.sub_band_bass_mean.unwrap_or(0.1);
+    let high = a.sub_band_high_mean.unwrap_or(0.0);
+    let presence = a.sub_band_presence_mean.unwrap_or(0.0);
+    let treble_ratio = (high + presence) / (bass + 0.01);
+    // Library: ratio typically 1-8, avg ~4
+    let treble_norm = ((treble_ratio - 1.0) / 6.0).clamp(0.0, 1.0);
+    let treble_contrib = treble_norm * 25.0;
 
-    (mode_contrib + tempo_contrib + bright_contrib + simple_contrib).clamp(0.0, 100.0)
+    // 3. Rhythmic activity (25 pts): faster onset rate = more upbeat/positive
+    // Library: avg 9/sec, range 1-28. Space/ambient = low, uptempo = high.
+    let onset_rate = a.onset_count.unwrap_or(0) as f64 / duration;
+    let rhythm_norm = ((onset_rate - 2.0) / 10.0).clamp(0.0, 1.0);
+    let rhythm_contrib = rhythm_norm * 25.0;
+
+    // 4. Pitch clarity (20 pts): clear melodic content = more tonal/positive
+    // Library: 0-0.949, avg 0.577, 87 distinct — good spread
+    let pitch_conf = a.pitch_confidence_mean.unwrap_or(0.5);
+    let pitch_contrib = pitch_conf.clamp(0.0, 1.0) * 20.0;
+
+    (bright_contrib + treble_contrib + rhythm_contrib + pitch_contrib).clamp(0.0, 100.0)
 }
 
 // ── Arousal Score (0-100) ──────────────────────────────────────────────
