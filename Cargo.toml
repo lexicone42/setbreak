@@ -45,6 +45,9 @@ shorten-rs = { git = "https://github.com/lexicone42/shorten-rs.git" }
 # Native APE (Monkey's Audio) decoding
 ape-rs = { git = "https://github.com/lexicone42/ape-rs.git" }
 
+# Native WavPack decoding
+wavpack-rs = { git = "https://github.com/lexicone42/wavpack-rs.git" }
+
 # Errors
 anyhow = "1"
 thiserror = "2"

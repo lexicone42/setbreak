@@ -17,6 +17,8 @@ pub enum DecodeError {
     Shn(String),
     #[error("APE decode error: {0}")]
     Ape(String),
+    #[error("WavPack decode error: {0}")]
+    WavPack(String),
     #[error("ffmpeg not found — required for SHN files")]
     FfmpegNotFound,
     #[error("ffmpeg decode error: {0}")]
@@ -32,7 +34,8 @@ pub enum DecodeError {
 /// - FLAC: claxon (native Rust, no external deps)
 /// - SHN: shorten-rs (native Rust)
 /// - APE: ape-rs (native Rust)
-/// - WV/DSD/etc: ffmpeg subprocess (no native Rust decoder available)
+/// - WV: wavpack-rs (native Rust)
+/// - DSD: ffmpeg subprocess (no native Rust decoder available)
 pub fn load_audio(path: &Path) -> Result<AudioFile, DecodeError> {
     let ext = path
         .extension()
@@ -49,7 +52,8 @@ pub fn load_audio(path: &Path) -> Result<AudioFile, DecodeError> {
         "flac" => load_flac_native(path)?,
         "shn" => load_shn_native(path)?,
         "ape" => load_ape_native(path)?,
-        // Fallback to ffmpeg for formats without Rust decoders (WavPack, DSD)
+        "wv" => load_wv_native(path)?,
+        // Fallback to ffmpeg for formats without Rust decoders (DSD)
         _ => load_via_ffmpeg(path)?,
     };
 
@@ -129,6 +133,32 @@ fn load_ape_native(path: &Path) -> Result<AudioFile, DecodeError> {
         .samples()
         .collect::<Result<Vec<i32>, _>>()
         .map_err(|e| DecodeError::Ape(format!("{}: {}", path.display(), e)))?;
+
+    let samples_f32: Vec<f32> = samples_i32.iter().map(|&s| s as f32 / scale).collect();
+
+    let buffer = AudioBuffer::new(samples_f32, sample_rate, channels);
+    Ok(AudioFile {
+        buffer,
+        format: AudioFormat::from_path(path),
+        path: path.display().to_string(),
+    })
+}
+
+/// Decode a WavPack (.wv) file natively using wavpack-rs.
+fn load_wv_native(path: &Path) -> Result<AudioFile, DecodeError> {
+    let mut reader = wavpack_rs::WavPackReader::open(path)
+        .map_err(|e| DecodeError::WavPack(format!("{}: {}", path.display(), e)))?;
+
+    let info = reader.info();
+    let sample_rate = info.sample_rate;
+    let channels = info.channels as usize;
+    let bits_per_sample = info.bits_per_sample;
+    let scale = 2_f32.powi(bits_per_sample as i32 - 1);
+
+    let samples_i32: Vec<i32> = reader
+        .samples()
+        .collect::<Result<Vec<i32>, _>>()
+        .map_err(|e| DecodeError::WavPack(format!("{}: {}", path.display(), e)))?;
 
     let samples_f32: Vec<f32> = samples_i32.iter().map(|&s| s as f32 / scale).collect();
 

@@ -2128,6 +2128,7 @@ dependencies = [
  "toml",
  "ureq",
  "walkdir",
+ "wavpack-rs",
 ]
 
 [[package]]
@@ -2949,6 +2950,11 @@ dependencies = [
  "indexmap",
  "semver",
 ]
+
+[[package]]
+name = "wavpack-rs"
+version = "0.1.0"
+source = "git+https://github.com/lexicone42/wavpack-rs.git#62f26840163998a8e3738683e86f2c4f8f99637e"
 
 [[package]]
 name = "web-sys"
