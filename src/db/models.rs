@@ -161,6 +161,31 @@ pub struct NewAnalysis {
     // Cross-feature correlations
     pub spectral_loudness_correlation: Option<f64>, // Pearson r between centroid and loudness
 
+    // Spectral shape descriptors (from ferrous-waves STFT)
+    pub spectral_skewness_mean: Option<f64>,    // asymmetry of spectrum (+ve = low-freq dominant)
+    pub spectral_kurtosis_mean: Option<f64>,    // peakedness (high = tonal, low = noise-like)
+    pub spectral_entropy_mean: Option<f64>,     // normalized Shannon entropy (0 = pure tone, 1 = noise)
+    pub spectral_entropy_std: Option<f64>,      // variability of entropy over time
+    pub spectral_slope_mean: Option<f64>,       // spectral tilt (negative = natural roll-off)
+    pub spectral_contrast_json: Option<String>, // JSON [f32; 7] — per-band peak/valley ratio
+
+    // Sub-band spectral flux
+    pub sub_band_flux_bass_mean: Option<f64>,   // bass change rate (kick detection)
+    pub sub_band_flux_bass_std: Option<f64>,    // variability of bass changes
+    pub sub_band_flux_mid_mean: Option<f64>,    // mid change rate (harmonic/rhythmic)
+    pub sub_band_flux_high_mean: Option<f64>,   // treble change rate (hi-hat/cymbal)
+
+    // Chromagram and harmonic features
+    pub tonnetz_json: Option<String>,           // JSON [f32; 6] — mean Tonnetz (harmonic center)
+    pub tonnetz_flux_mean: Option<f64>,         // rate of harmonic change (HCDF)
+    pub chroma_flux_mean: Option<f64>,          // rate of pitch-class change
+
+    // Beat-synchronous rhythm features
+    pub beat_pattern_json: Option<String>,      // JSON [[f32; 16]; 3] — sub-band onset patterns
+    pub syncopation: Option<f64>,               // off-beat emphasis (0 = on-beat, high = syncopated)
+    pub pulse_clarity: Option<f64>,             // beat regularity strength (0-1)
+    pub offbeat_ratio: Option<f64>,             // mid-band offbeat/downbeat energy (high = reggae skank)
+
     // Musical
     pub estimated_key: Option<String>,
     pub key_confidence: Option<f64>,

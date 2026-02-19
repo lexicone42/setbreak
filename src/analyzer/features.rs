@@ -28,6 +28,38 @@ pub fn extract(track_id: i64, r: &AnalysisResult) -> ExtractionResult {
     let (sub_high_mean, sub_high_std) = mean_std(&r.spectral.sub_band_energy_high);
     let (sub_presence_mean, sub_presence_std) = mean_std(&r.spectral.sub_band_energy_presence);
 
+    // Spectral shape descriptors (higher moments from STFT)
+    let (skewness_mean, _) = mean_std(&r.spectral.spectral_skewness);
+    let (kurtosis_mean, _) = mean_std(&r.spectral.spectral_kurtosis);
+    let (entropy_mean, entropy_std) = mean_std(&r.spectral.spectral_entropy);
+    let (slope_mean, _) = mean_std(&r.spectral.spectral_slope);
+
+    // Spectral contrast: mean per octave band across frames → JSON [7 values]
+    let spectral_contrast_json = mean_per_channel(&r.spectral.spectral_contrast)
+        .and_then(|v| serde_json::to_string(&v).ok());
+
+    // Sub-band spectral flux
+    let (sbf_bass_mean, sbf_bass_std) = mean_std(&r.spectral.sub_band_flux_bass);
+    let (sbf_mid_mean, _) = mean_std(&r.spectral.sub_band_flux_mid);
+    let (sbf_high_mean, _) = mean_std(&r.spectral.sub_band_flux_high);
+
+    // Tonnetz: mean per dimension across frames → JSON [6 values]
+    let tonnetz_json = mean_per_channel(&r.spectral.tonnetz)
+        .and_then(|v| serde_json::to_string(&v).ok());
+
+    // Tonnetz flux: mean frame-to-frame distance in 6D harmonic space (HCDF)
+    let tonnetz_flux_mean_val = compute_channel_flux(&r.spectral.tonnetz);
+
+    // Chroma flux: mean frame-to-frame distance in 12D pitch-class space
+    let chroma_flux_mean_val = compute_channel_flux(&r.spectral.chroma);
+
+    // Beat-synchronous rhythm pattern: 3 bands × 16 positions → JSON
+    let beat_pattern_json = if r.spectral.beat_onset_pattern.is_empty() {
+        None
+    } else {
+        serde_json::to_string(&r.spectral.beat_onset_pattern).ok()
+    };
+
     // MFCC: per-coefficient mean/std (13 coefficients)
     let mfcc_stats: Vec<(f64, f64)> = (0..13)
         .map(|i| {
@@ -292,6 +324,31 @@ pub fn extract(track_id: i64, r: &AnalysisResult) -> ExtractionResult {
         spectral_loudness_correlation: compute_pearson_correlation(
             &r.spectral.spectral_centroid, &r.perceptual.short_term_loudness,
         ),
+
+        // Spectral shape descriptors
+        spectral_skewness_mean: Some(skewness_mean),
+        spectral_kurtosis_mean: Some(kurtosis_mean),
+        spectral_entropy_mean: Some(entropy_mean),
+        spectral_entropy_std: Some(entropy_std),
+        spectral_slope_mean: Some(slope_mean),
+        spectral_contrast_json,
+
+        // Sub-band spectral flux
+        sub_band_flux_bass_mean: Some(sbf_bass_mean),
+        sub_band_flux_bass_std: Some(sbf_bass_std),
+        sub_band_flux_mid_mean: Some(sbf_mid_mean),
+        sub_band_flux_high_mean: Some(sbf_high_mean),
+
+        // Chromagram and harmonic features
+        tonnetz_json,
+        tonnetz_flux_mean: tonnetz_flux_mean_val,
+        chroma_flux_mean: chroma_flux_mean_val,
+
+        // Beat-synchronous rhythm features
+        beat_pattern_json,
+        syncopation: Some(r.spectral.syncopation as f64),
+        pulse_clarity: Some(r.spectral.pulse_clarity as f64),
+        offbeat_ratio: Some(r.spectral.offbeat_ratio as f64),
 
         // Musical
         estimated_key: Some(r.musical.key.key.clone()),
@@ -754,6 +811,51 @@ fn compute_beat_regularity(beats: &[f32]) -> Option<f64> {
     }
     let variance = intervals.iter().map(|&i| (i - mean).powi(2)).sum::<f64>() / intervals.len() as f64;
     Some(variance.sqrt() / mean) // CV = std/mean
+}
+
+/// Mean per channel for data stored as channels × frames
+/// (e.g. 7-band spectral contrast, 6D Tonnetz, 12D chroma).
+/// Returns one mean value per channel.
+fn mean_per_channel(channels: &[Vec<f32>]) -> Option<Vec<f32>> {
+    if channels.is_empty() {
+        return None;
+    }
+    let means: Vec<f32> = channels
+        .iter()
+        .map(|ch| {
+            if ch.is_empty() {
+                0.0
+            } else {
+                ch.iter().sum::<f32>() / ch.len() as f32
+            }
+        })
+        .collect();
+    Some(means)
+}
+
+/// Mean frame-to-frame Euclidean distance for channels × frames data.
+/// Each channel[i] contains time-series values for dimension i.
+/// Computes distance between consecutive time steps across all dimensions.
+fn compute_channel_flux(channels: &[Vec<f32>]) -> Option<f64> {
+    if channels.is_empty() {
+        return None;
+    }
+    let nframes = channels[0].len();
+    if nframes < 2 {
+        return None;
+    }
+    let mut total_dist = 0.0_f64;
+    for t in 1..nframes {
+        let mut dist_sq = 0.0_f64;
+        for ch in channels {
+            if t < ch.len() {
+                let d = (ch[t] - ch[t - 1]) as f64;
+                dist_sq += d * d;
+            }
+        }
+        total_dist += dist_sq.sqrt();
+    }
+    Some(total_dist / (nframes - 1) as f64)
 }
 
 /// Pearson correlation between two per-frame vectors (aligned by truncating to shorter).

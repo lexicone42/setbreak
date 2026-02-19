@@ -85,8 +85,11 @@ impl Database {
         if version < 11 {
             self.migrate_v11()?;
         }
+        if version < 12 {
+            self.migrate_v12()?;
+        }
 
-        self.conn.pragma_update(None, "user_version", 11)?;
+        self.conn.pragma_update(None, "user_version", 12)?;
         Ok(())
     }
 
@@ -507,6 +510,31 @@ impl Database {
         try_add_column(&self.conn, "analysis_results", "energy_valley_depth_mean REAL")?;
         try_add_column(&self.conn, "analysis_results", "rhythmic_periodicity_strength REAL")?;
         try_add_column(&self.conn, "analysis_results", "spectral_loudness_correlation REAL")?;
+        Ok(())
+    }
+    /// V12: Spectral shape descriptors, sub-band flux, chroma/Tonnetz, beat-sync rhythm
+    fn migrate_v12(&self) -> Result<()> {
+        // Spectral shape descriptors (from STFT higher moments)
+        try_add_column(&self.conn, "analysis_results", "spectral_skewness_mean REAL")?;
+        try_add_column(&self.conn, "analysis_results", "spectral_kurtosis_mean REAL")?;
+        try_add_column(&self.conn, "analysis_results", "spectral_entropy_mean REAL")?;
+        try_add_column(&self.conn, "analysis_results", "spectral_entropy_std REAL")?;
+        try_add_column(&self.conn, "analysis_results", "spectral_slope_mean REAL")?;
+        try_add_column(&self.conn, "analysis_results", "spectral_contrast_json TEXT")?;
+        // Sub-band spectral flux
+        try_add_column(&self.conn, "analysis_results", "sub_band_flux_bass_mean REAL")?;
+        try_add_column(&self.conn, "analysis_results", "sub_band_flux_bass_std REAL")?;
+        try_add_column(&self.conn, "analysis_results", "sub_band_flux_mid_mean REAL")?;
+        try_add_column(&self.conn, "analysis_results", "sub_band_flux_high_mean REAL")?;
+        // Chromagram and harmonic features
+        try_add_column(&self.conn, "analysis_results", "tonnetz_json TEXT")?;
+        try_add_column(&self.conn, "analysis_results", "tonnetz_flux_mean REAL")?;
+        try_add_column(&self.conn, "analysis_results", "chroma_flux_mean REAL")?;
+        // Beat-synchronous rhythm features
+        try_add_column(&self.conn, "analysis_results", "beat_pattern_json TEXT")?;
+        try_add_column(&self.conn, "analysis_results", "syncopation REAL")?;
+        try_add_column(&self.conn, "analysis_results", "pulse_clarity REAL")?;
+        try_add_column(&self.conn, "analysis_results", "offbeat_ratio REAL")?;
         Ok(())
     }
 }
