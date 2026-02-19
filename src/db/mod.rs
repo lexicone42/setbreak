@@ -94,8 +94,11 @@ impl Database {
         if version < 14 {
             self.migrate_v14()?;
         }
+        if version < 15 {
+            self.migrate_v15()?;
+        }
 
-        self.conn.pragma_update(None, "user_version", 14)?;
+        self.conn.pragma_update(None, "user_version", 15)?;
         Ok(())
     }
 
@@ -588,6 +591,13 @@ impl Database {
         try_add_column(&self.conn, "analysis_results", "spectral_contrast_range REAL")?;
         try_add_column(&self.conn, "analysis_results", "onset_strength_contour_json TEXT")?;
         try_add_column(&self.conn, "analysis_results", "section_diversity_score REAL")?;
+        Ok(())
+    }
+
+    /// V15: Per-frame and per-chord major/minor ratios for valence scoring
+    fn migrate_v15(&self) -> Result<()> {
+        try_add_column(&self.conn, "analysis_results", "major_frame_ratio REAL")?;
+        try_add_column(&self.conn, "analysis_results", "major_chord_ratio REAL")?;
         Ok(())
     }
 }

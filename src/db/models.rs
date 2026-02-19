@@ -243,6 +243,8 @@ pub struct NewAnalysis {
     pub time_sig_numerator: Option<i32>,
     pub time_sig_denominator: Option<i32>,
     pub chroma_vector: Option<String>, // JSON [f64; 12]
+    pub major_frame_ratio: Option<f64>,  // fraction of frames classified as major (0-1)
+    pub major_chord_ratio: Option<f64>,  // fraction of detected chords that are major (0-1)
 
     // Quality
     pub recording_quality_score: Option<f64>,

@@ -631,15 +631,16 @@ fn valence_score(a: &NewAnalysis) -> f64 {
     let rhythm_norm = ((onset_rate - 2.0) / 10.0).clamp(0.0, 1.0);
     let rhythm_contrib = rhythm_norm * 25.0;
 
-    // 4. Warmth (20 pts): inverse spectral crest — lower crest = fuller, warmer sound
-    // Library crest: 17-577, p5=44.8, avg=76, p95=110.2
-    // High valence tracks avg 53.5 crest, low valence avg 81.9 (diff -28.4)
-    let crest = a.spectral_crest_mean.unwrap_or(76.0);
-    // Map: crest 30 → 1.0, crest 120 → 0.0
-    let warmth_norm = ((120.0 - crest) / 90.0).clamp(0.0, 1.0);
-    let warmth_contrib = warmth_norm * 20.0;
+    // 4. Modality (20 pts): major key = positive valence, minor = lower
+    // Per-frame K-K profile classification and chord-level major/minor ratio.
+    // major_frame_ratio: 0.0 (all minor) to 1.0 (all major)
+    // major_chord_ratio: fraction of chords detected as major
+    let frame_ratio = a.major_frame_ratio.unwrap_or(0.5);
+    let chord_ratio = a.major_chord_ratio.unwrap_or(0.5);
+    let major_ratio = (frame_ratio + chord_ratio) / 2.0;
+    let modality_contrib = major_ratio * 20.0;
 
-    (bright_contrib + smooth_contrib + rhythm_contrib + warmth_contrib).clamp(0.0, 100.0)
+    (bright_contrib + smooth_contrib + rhythm_contrib + modality_contrib).clamp(0.0, 100.0)
 }
 
 // ── Arousal Score (0-100) ──────────────────────────────────────────────
@@ -743,6 +744,8 @@ mod tests {
             time_sig_numerator: Some(4),
             time_sig_denominator: Some(4),
             chroma_vector: None,
+            major_frame_ratio: None,
+            major_chord_ratio: None,
             recording_quality_score: Some(0.8),
             snr_db: Some(45.0),
             clipping_ratio: Some(0.0),

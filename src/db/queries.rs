@@ -263,6 +263,7 @@ impl Database {
                 energy_score, intensity_score, groove_score,
                 improvisation_score, tightness_score, build_quality_score,
                 exploratory_score, transcendence_score,
+                major_frame_ratio, major_chord_ratio,
                 analyzed_at
             ) VALUES (
                 ?1,
@@ -331,6 +332,7 @@ impl Database {
                 ?176, ?177, ?178,
                 ?179, ?180, ?181,
                 ?182, ?183,
+                ?184, ?185,
                 datetime('now')
             )
             ON CONFLICT(track_id) DO UPDATE SET
@@ -503,6 +505,8 @@ impl Database {
                 build_quality_score = excluded.build_quality_score,
                 exploratory_score = excluded.exploratory_score,
                 transcendence_score = excluded.transcendence_score,
+                major_frame_ratio = excluded.major_frame_ratio,
+                major_chord_ratio = excluded.major_chord_ratio,
                 analyzed_at = datetime('now')
             ",
             params![
@@ -573,6 +577,7 @@ impl Database {
                 a.energy_score, a.intensity_score, a.groove_score,
                 a.improvisation_score, a.tightness_score, a.build_quality_score,
                 a.exploratory_score, a.transcendence_score,
+                a.major_frame_ratio, a.major_chord_ratio,
             ],
         )?;
         Ok(())
@@ -606,7 +611,8 @@ impl Database {
                 zcr_mean, zcr_std,
                 roughness_mean, spectral_crest_mean,
                 onset_strength_mean,
-                harmonic_percussive_ratio, chromagram_entropy
+                harmonic_percussive_ratio, chromagram_entropy,
+                major_frame_ratio, major_chord_ratio
              FROM analysis_results",
         )?;
         let rows = stmt
@@ -659,6 +665,8 @@ impl Database {
                     onset_strength_mean: row.get(44)?,
                     harmonic_percussive_ratio: row.get(45)?,
                     chromagram_entropy: row.get(46)?,
+                    major_frame_ratio: row.get(47)?,
+                    major_chord_ratio: row.get(48)?,
                     // Fields not needed for scoring — set to None/defaults
                     sample_rate: None, channels: None, peak_amplitude: None,
                     spectral_rolloff_mean: None, spectral_rolloff_std: None,
@@ -1528,6 +1536,7 @@ mod tests {
             harmonic_complexity: None, chord_count: None, chord_change_rate: None,
             mode_clarity: None, key_alternatives_count: None,
             time_sig_numerator: None, time_sig_denominator: None, chroma_vector: None,
+            major_frame_ratio: None, major_chord_ratio: None,
             recording_quality_score: None, snr_db: None, clipping_ratio: None,
             noise_floor_db: None,
             segment_count: None, temporal_complexity: None, coherence_score: None,

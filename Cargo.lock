@@ -718,7 +718,7 @@ dependencies = [
 [[package]]
 name = "ferrous-waves"
 version = "0.1.0"
-source = "git+https://github.com/lexicone42/ferrous-waves.git#1ccd5f12f86a790f47a94a61db374b87ab7140b9"
+source = "git+https://github.com/lexicone42/ferrous-waves.git#bcfd609a0616bd92fdb0c535fce2dfbb1964da12"
 dependencies = [
  "anyhow",
  "apodize",

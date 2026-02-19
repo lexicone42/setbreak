@@ -421,6 +421,8 @@ pub fn extract(track_id: i64, r: &AnalysisResult) -> ExtractionResult {
         time_sig_numerator: time_sig_num,
         time_sig_denominator: time_sig_den,
         chroma_vector: chroma_json,
+        major_frame_ratio: Some(r.musical.major_frame_ratio as f64),
+        major_chord_ratio: Some(r.musical.major_chord_ratio as f64),
 
         // Quality
         recording_quality_score: Some(r.quality.overall_score as f64),
