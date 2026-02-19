@@ -60,6 +60,25 @@ pub fn extract(track_id: i64, r: &AnalysisResult) -> ExtractionResult {
         serde_json::to_string(&r.spectral.beat_onset_pattern).ok()
     };
 
+    // v13: New spectral features
+    let (spread_mean, spread_std) = mean_std(&r.spectral.spectral_spread);
+    let (crest_mean, crest_std) = mean_std(&r.spectral.spectral_crest);
+    let (rough_mean, rough_std) = mean_std(&r.spectral.roughness);
+    let (sw_mean, sw_std) = mean_std(&r.spectral.stereo_width);
+
+    // MFCC deltas: per-coefficient mean across frames → JSON [13 values each]
+    let mfcc_delta_json = mean_per_channel(&r.spectral.mfcc_delta)
+        .and_then(|v| serde_json::to_string(&v).ok());
+    let mfcc_delta_delta_json = mean_per_channel(&r.spectral.mfcc_delta_delta)
+        .and_then(|v| serde_json::to_string(&v).ok());
+
+    // Temporal modulation spectrum: 5 band energies → JSON
+    let temporal_modulation_json = if r.spectral.temporal_modulation_bands.is_empty() {
+        None
+    } else {
+        serde_json::to_string(&r.spectral.temporal_modulation_bands).ok()
+    };
+
     // MFCC: per-coefficient mean/std (13 coefficients)
     let mfcc_stats: Vec<(f64, f64)> = (0..13)
         .map(|i| {
@@ -349,6 +368,31 @@ pub fn extract(track_id: i64, r: &AnalysisResult) -> ExtractionResult {
         syncopation: Some(r.spectral.syncopation as f64),
         pulse_clarity: Some(r.spectral.pulse_clarity as f64),
         offbeat_ratio: Some(r.spectral.offbeat_ratio as f64),
+
+        // v13: New spectral/temporal features
+        spectral_spread_mean: Some(spread_mean),
+        spectral_spread_std: Some(spread_std),
+        spectral_crest_mean: Some(crest_mean),
+        spectral_crest_std: Some(crest_std),
+        roughness_mean: Some(rough_mean),
+        roughness_std: Some(rough_std),
+        mfcc_delta_mean_json: mfcc_delta_json,
+        mfcc_delta_delta_mean_json: mfcc_delta_delta_json,
+        stereo_width_mean: Some(sw_mean),
+        stereo_width_std: Some(sw_std),
+        attack_time_mean: Some(r.spectral.attack_time_mean as f64),
+        attack_time_std: Some(r.spectral.attack_time_std as f64),
+        decay_time_mean: Some(r.spectral.decay_time_mean as f64),
+        decay_time_std: Some(r.spectral.decay_time_std as f64),
+        onset_strength_mean: Some(r.spectral.onset_strength_mean as f64),
+        onset_strength_std: Some(r.spectral.onset_strength_std as f64),
+        onset_strength_skewness: Some(r.spectral.onset_strength_skewness as f64),
+        swing_ratio: Some(r.spectral.swing_ratio as f64),
+        microtiming_deviation_mean: Some(r.spectral.microtiming_deviation_mean as f64),
+        microtiming_deviation_std: Some(r.spectral.microtiming_deviation_std as f64),
+        microtiming_bias: Some(r.spectral.microtiming_bias as f64),
+        temporal_modulation_json,
+        chroma_self_similarity_bandwidth: Some(r.spectral.chroma_self_similarity_bandwidth as f64),
 
         // Musical
         estimated_key: Some(r.musical.key.key.clone()),

@@ -88,8 +88,11 @@ impl Database {
         if version < 12 {
             self.migrate_v12()?;
         }
+        if version < 13 {
+            self.migrate_v13()?;
+        }
 
-        self.conn.pragma_update(None, "user_version", 12)?;
+        self.conn.pragma_update(None, "user_version", 13)?;
         Ok(())
     }
 
@@ -535,6 +538,41 @@ impl Database {
         try_add_column(&self.conn, "analysis_results", "syncopation REAL")?;
         try_add_column(&self.conn, "analysis_results", "pulse_clarity REAL")?;
         try_add_column(&self.conn, "analysis_results", "offbeat_ratio REAL")?;
+        Ok(())
+    }
+
+    /// V13: Timbral texture, MFCC dynamics, stereo, attack/decay, rhythm micro, modulation, SSM
+    fn migrate_v13(&self) -> Result<()> {
+        // Timbral texture descriptors
+        try_add_column(&self.conn, "analysis_results", "spectral_spread_mean REAL")?;
+        try_add_column(&self.conn, "analysis_results", "spectral_spread_std REAL")?;
+        try_add_column(&self.conn, "analysis_results", "spectral_crest_mean REAL")?;
+        try_add_column(&self.conn, "analysis_results", "spectral_crest_std REAL")?;
+        try_add_column(&self.conn, "analysis_results", "roughness_mean REAL")?;
+        try_add_column(&self.conn, "analysis_results", "roughness_std REAL")?;
+        // MFCC dynamics
+        try_add_column(&self.conn, "analysis_results", "mfcc_delta_mean_json TEXT")?;
+        try_add_column(&self.conn, "analysis_results", "mfcc_delta_delta_mean_json TEXT")?;
+        // Stereo characteristics
+        try_add_column(&self.conn, "analysis_results", "stereo_width_mean REAL")?;
+        try_add_column(&self.conn, "analysis_results", "stereo_width_std REAL")?;
+        // Onset envelope characteristics
+        try_add_column(&self.conn, "analysis_results", "attack_time_mean REAL")?;
+        try_add_column(&self.conn, "analysis_results", "attack_time_std REAL")?;
+        try_add_column(&self.conn, "analysis_results", "decay_time_mean REAL")?;
+        try_add_column(&self.conn, "analysis_results", "decay_time_std REAL")?;
+        try_add_column(&self.conn, "analysis_results", "onset_strength_mean REAL")?;
+        try_add_column(&self.conn, "analysis_results", "onset_strength_std REAL")?;
+        try_add_column(&self.conn, "analysis_results", "onset_strength_skewness REAL")?;
+        // Rhythm micro-features
+        try_add_column(&self.conn, "analysis_results", "swing_ratio REAL")?;
+        try_add_column(&self.conn, "analysis_results", "microtiming_deviation_mean REAL")?;
+        try_add_column(&self.conn, "analysis_results", "microtiming_deviation_std REAL")?;
+        try_add_column(&self.conn, "analysis_results", "microtiming_bias REAL")?;
+        // Temporal modulation spectrum
+        try_add_column(&self.conn, "analysis_results", "temporal_modulation_json TEXT")?;
+        // Self-similarity structure
+        try_add_column(&self.conn, "analysis_results", "chroma_self_similarity_bandwidth REAL")?;
         Ok(())
     }
 }

@@ -186,6 +186,43 @@ pub struct NewAnalysis {
     pub pulse_clarity: Option<f64>,             // beat regularity strength (0-1)
     pub offbeat_ratio: Option<f64>,             // mid-band offbeat/downbeat energy (high = reggae skank)
 
+    // Timbral texture descriptors
+    pub spectral_spread_mean: Option<f64>,       // spectral bandwidth in Hz (narrow = tonal, wide = noisy)
+    pub spectral_spread_std: Option<f64>,        // variability of spectral width
+    pub spectral_crest_mean: Option<f64>,        // max/mean of spectrum (high = tonal, low = noise)
+    pub spectral_crest_std: Option<f64>,         // variability of spectral peakedness
+    pub roughness_mean: Option<f64>,             // sensory dissonance (Sethares model)
+    pub roughness_std: Option<f64>,              // variability of roughness
+
+    // MFCC dynamics (timbre change rate)
+    pub mfcc_delta_mean_json: Option<String>,       // JSON [f32; 13] — mean MFCC first derivatives
+    pub mfcc_delta_delta_mean_json: Option<String>, // JSON [f32; 13] — mean MFCC second derivatives
+
+    // Stereo characteristics
+    pub stereo_width_mean: Option<f64>,          // L/R correlation (1=mono, 0=wide, <0=out of phase)
+    pub stereo_width_std: Option<f64>,           // variability of stereo image
+
+    // Onset envelope characteristics
+    pub attack_time_mean: Option<f64>,           // mean rise time onset→peak (seconds)
+    pub attack_time_std: Option<f64>,            // variability of attack times
+    pub decay_time_mean: Option<f64>,            // mean decay time peak→quiet (seconds)
+    pub decay_time_std: Option<f64>,             // variability of decay times
+    pub onset_strength_mean: Option<f64>,        // mean onset strength (spectral flux peaks)
+    pub onset_strength_std: Option<f64>,         // variability of onset strengths
+    pub onset_strength_skewness: Option<f64>,    // distribution shape (+ve = rare big hits)
+
+    // Rhythm micro-features
+    pub swing_ratio: Option<f64>,                // 8th-note timing ratio (1.0=straight, ~1.67=shuffle)
+    pub microtiming_deviation_mean: Option<f64>, // mean onset-to-grid deviation (seconds)
+    pub microtiming_deviation_std: Option<f64>,  // variability of timing deviations
+    pub microtiming_bias: Option<f64>,           // ahead(+)/behind(-) beat tendency
+
+    // Temporal modulation spectrum
+    pub temporal_modulation_json: Option<String>, // JSON [f32; 5] — energy in 5 modulation bands
+
+    // Self-similarity structure
+    pub chroma_self_similarity_bandwidth: Option<f64>, // harmonic repetitiveness (wide=repetitive)
+
     // Musical
     pub estimated_key: Option<String>,
     pub key_confidence: Option<f64>,
