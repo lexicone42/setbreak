@@ -91,8 +91,11 @@ impl Database {
         if version < 13 {
             self.migrate_v13()?;
         }
+        if version < 14 {
+            self.migrate_v14()?;
+        }
 
-        self.conn.pragma_update(None, "user_version", 13)?;
+        self.conn.pragma_update(None, "user_version", 14)?;
         Ok(())
     }
 
@@ -573,6 +576,18 @@ impl Database {
         try_add_column(&self.conn, "analysis_results", "temporal_modulation_json TEXT")?;
         // Self-similarity structure
         try_add_column(&self.conn, "analysis_results", "chroma_self_similarity_bandwidth REAL")?;
+        Ok(())
+    }
+
+    /// V14: Music understanding features — H/P ratio, chromagram entropy, contrast stats,
+    /// onset contour shape, section diversity
+    fn migrate_v14(&self) -> Result<()> {
+        try_add_column(&self.conn, "analysis_results", "harmonic_percussive_ratio REAL")?;
+        try_add_column(&self.conn, "analysis_results", "chromagram_entropy REAL")?;
+        try_add_column(&self.conn, "analysis_results", "spectral_contrast_slope REAL")?;
+        try_add_column(&self.conn, "analysis_results", "spectral_contrast_range REAL")?;
+        try_add_column(&self.conn, "analysis_results", "onset_strength_contour_json TEXT")?;
+        try_add_column(&self.conn, "analysis_results", "section_diversity_score REAL")?;
         Ok(())
     }
 }

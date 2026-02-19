@@ -79,6 +79,13 @@ pub fn extract(track_id: i64, r: &AnalysisResult) -> ExtractionResult {
         serde_json::to_string(&r.spectral.temporal_modulation_bands).ok()
     };
 
+    // v14: Onset strength contour (DCT shape of spectral flux)
+    let onset_contour_json = if r.spectral.onset_strength_contour.is_empty() {
+        None
+    } else {
+        serde_json::to_string(&r.spectral.onset_strength_contour).ok()
+    };
+
     // MFCC: per-coefficient mean/std (13 coefficients)
     let mfcc_stats: Vec<(f64, f64)> = (0..13)
         .map(|i| {
@@ -393,6 +400,14 @@ pub fn extract(track_id: i64, r: &AnalysisResult) -> ExtractionResult {
         microtiming_bias: Some(r.spectral.microtiming_bias as f64),
         temporal_modulation_json,
         chroma_self_similarity_bandwidth: Some(r.spectral.chroma_self_similarity_bandwidth as f64),
+
+        // v14: Music understanding features
+        harmonic_percussive_ratio: Some(r.spectral.harmonic_percussive_ratio as f64),
+        chromagram_entropy: Some(r.spectral.chromagram_entropy as f64),
+        spectral_contrast_slope: Some(r.spectral.spectral_contrast_slope as f64),
+        spectral_contrast_range: Some(r.spectral.spectral_contrast_range as f64),
+        onset_strength_contour_json: onset_contour_json,
+        section_diversity_score: compute_section_diversity(&r.segments.structure, &r.segments.segments),
 
         // Musical
         estimated_key: Some(r.musical.key.key.clone()),
@@ -929,4 +944,59 @@ fn compute_pearson_correlation(a: &[f32], b: &[f32]) -> Option<f64> {
         return Some(0.0);
     }
     Some(cov / denom)
+}
+
+/// Section diversity: how different are the structural sections from each other?
+/// Computes pairwise Euclidean distances between segment feature vectors
+/// (energy, spectral_centroid, zcr, dynamic_range), normalized.
+/// High = track explores many distinct textures. Low = stays in one groove.
+fn compute_section_diversity(
+    _structure: &[ferrous_waves::analysis::segments::StructuralSection],
+    segments: &[ferrous_waves::analysis::segments::AudioSegment],
+) -> Option<f64> {
+    if segments.len() < 2 {
+        return None;
+    }
+
+    // Build normalized feature vectors per segment
+    let features: Vec<[f64; 4]> = segments.iter().map(|s| {
+        [s.energy as f64, s.spectral_centroid as f64, s.zcr as f64, s.dynamic_range as f64]
+    }).collect();
+
+    // Normalize each dimension to [0, 1] within this track
+    let n_dims = 4;
+    let mut mins = [f64::INFINITY; 4];
+    let mut maxs = [f64::NEG_INFINITY; 4];
+    for f in &features {
+        for d in 0..n_dims {
+            mins[d] = mins[d].min(f[d]);
+            maxs[d] = maxs[d].max(f[d]);
+        }
+    }
+    let ranges: Vec<f64> = (0..n_dims).map(|d| {
+        let r = maxs[d] - mins[d];
+        if r > 1e-10 { r } else { 1.0 }
+    }).collect();
+
+    let normed: Vec<[f64; 4]> = features.iter().map(|f| {
+        let mut n = [0.0; 4];
+        for d in 0..n_dims {
+            n[d] = (f[d] - mins[d]) / ranges[d];
+        }
+        n
+    }).collect();
+
+    // Mean pairwise Euclidean distance
+    let n = normed.len();
+    let mut total_dist = 0.0;
+    let mut count = 0u64;
+    for i in 0..n {
+        for j in (i + 1)..n {
+            let dist: f64 = (0..n_dims).map(|d| (normed[i][d] - normed[j][d]).powi(2)).sum::<f64>().sqrt();
+            total_dist += dist;
+            count += 1;
+        }
+    }
+
+    if count == 0 { None } else { Some(total_dist / count as f64) }
 }

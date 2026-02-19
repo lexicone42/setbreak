@@ -223,6 +223,14 @@ pub struct NewAnalysis {
     // Self-similarity structure
     pub chroma_self_similarity_bandwidth: Option<f64>, // harmonic repetitiveness (wide=repetitive)
 
+    // v14: Music understanding features
+    pub harmonic_percussive_ratio: Option<f64>,     // 1.0=harmonic, 0.0=percussive
+    pub chromagram_entropy: Option<f64>,             // tonal complexity (0=simple, 2.5=chromatic)
+    pub spectral_contrast_slope: Option<f64>,        // contrast vs frequency trend
+    pub spectral_contrast_range: Option<f64>,        // contrast variation across bands
+    pub onset_strength_contour_json: Option<String>, // DCT of rhythmic intensity shape [4 values]
+    pub section_diversity_score: Option<f64>,        // how different sections are from each other
+
     // Musical
     pub estimated_key: Option<String>,
     pub key_confidence: Option<f64>,
