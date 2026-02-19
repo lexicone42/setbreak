@@ -5,7 +5,7 @@ Thanks for your interest! Here's how to get started.
 ## Setup
 
 1. Install Rust 1.85+ (for 2024 edition support): https://rustup.rs
-2. Install `ffmpeg` (needed for SHN file decoding)
+2. Optional: Install `ffmpeg` (only needed for WavPack and DSD files)
 3. Clone and build in release mode:
 
 ```bash
@@ -22,23 +22,26 @@ cargo build --release
 cargo test
 ```
 
-All tests run against in-memory state — no music files or database needed.
+All tests run against in-memory state — no music files or database needed. Currently 99 tests.
 
 ## Project structure
 
 ```
 src/
-  main.rs              CLI entry point (clap)
+  main.rs              CLI entry point (clap) — 15 subcommands
   bands.rs             Band registry (single source of truth for all band data)
   config.rs            TOML config loading
-  scanner/             File discovery + filename parsing
-  analyzer/            Parallel audio analysis + jam scoring
-  db/                  SQLite schema, migrations, queries
+  calibrate.rs         LUFS-based score calibration
+  scanner/             File discovery + filename parsing + recording classification
+  analyzer/            Parallel audio analysis + feature extraction + jam scoring
+  db/                  SQLite schema, migrations (v1-v14), queries
   setlist/             archive.org metadata lookups
   chains.rs            Segue chain detection
   discovery.rs         Missing show discovery
   similarity.rs        Track similarity
 ```
+
+See [ANALYZER.md](ANALYZER.md) for details on all 185 extracted features and the 10 jam scores.
 
 ## Adding a new band
 
@@ -59,11 +62,23 @@ search = ["lettuce"]
 archive = { type = "creator", value = "Lettuce" }
 ```
 
+## Adding new features
+
+The feature pipeline has 5 files that need updating in order:
+
+1. **ferrous-waves** (`engine.rs`): Add computation to the DSP engine
+2. **models.rs**: Add field to `NewAnalysis` struct
+3. **mod.rs**: Add migration (`try_add_column`) and bump `user_version`
+4. **queries.rs**: Add column to all 6 SQL locations (INSERT columns, VALUES params, ON CONFLICT SET, `params!` macro, `get_analyses_for_rescore`, `minimal_analysis`)
+5. **features.rs**: Add extraction from `AnalysisResult` to `NewAnalysis`
+6. **jam_metrics.rs**: Add `None` to `base_analysis()` test helper
+
 ## Style
 
 - Follow existing patterns in the codebase
 - `cargo clippy` should be clean
 - Prefer simple, direct code over abstractions
+- All features are `Option<T>` in the DB — graceful degradation if a feature can't be computed
 
 ## Versioning
 

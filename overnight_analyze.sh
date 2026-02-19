@@ -1,7 +1,8 @@
 #!/bin/bash
 # SetBreak overnight analysis script
 # Runs analysis with progress logging, handles interrupts gracefully.
-# Usage: nohup ./overnight_analyze.sh &
+# Usage: nohup ./overnight_analyze.sh &           # incremental (new tracks only)
+#        FORCE=1 nohup ./overnight_analyze.sh &   # full rescan (all tracks)
 
 set -euo pipefail
 
@@ -9,7 +10,7 @@ SETBREAK="./target/release/setbreak"
 DB_PATH="$HOME/.local/share/setbreak/setbreak.db"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 LOG_DIR="$SCRIPT_DIR/logs"
-JOBS=3  # 3 of 6 cores — leaving room for the system
+JOBS=4  # 4 of 6 cores — leaving room for the system
 MAX_HOURS=8
 
 mkdir -p "$LOG_DIR"
@@ -42,8 +43,9 @@ START_TIME=$SECONDS
 
 # Run analysis — the progress bar goes to stderr (tee captures both)
 # The --verbose flag gives us INFO-level logging of individual track results
-# Analyze remaining unanalyzed tracks (resumable — skips already-analyzed)
-"$SETBREAK" analyze -j "$JOBS" --db-path "$DB_PATH" -v 2>&1
+# Use --force for full rescan (re-analyze all tracks), omit for incremental
+FORCE_FLAG="${FORCE:+--force}"
+"$SETBREAK" analyze -j "$JOBS" --db-path "$DB_PATH" $FORCE_FLAG -v 2>&1
 
 EXIT_CODE=$?
 ELAPSED=$(( SECONDS - START_TIME ))
