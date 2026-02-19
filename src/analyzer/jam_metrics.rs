@@ -186,9 +186,10 @@ fn improvisation_score(a: &NewAnalysis) -> f64 {
     let trans_contrib = trans_norm * 25.0;
 
     // 4. Tonal ambiguity (20 pts): low mode clarity = harmonically wandering
-    // Library range: 0.05-0.51, avg 0.15
-    let mode_clarity = a.mode_clarity.unwrap_or(0.15);
-    let tonal_ambiguity = (1.0 - (mode_clarity - 0.05) / 0.45).clamp(0.0, 1.0);
+    // v15 range: 0.003-0.97, avg 0.44 (v14 was degenerate: 0.05-0.51, avg 0.15)
+    // K-K 4-mode correlation gap gives much wider, more meaningful range.
+    let mode_clarity = a.mode_clarity.unwrap_or(0.3);
+    let tonal_ambiguity = (1.0 - mode_clarity).clamp(0.0, 1.0);
     let tonal_contrib = tonal_ambiguity * 20.0;
 
     (non_rep_contrib + timbre_contrib + trans_contrib + tonal_contrib).clamp(0.0, 100.0)
@@ -632,13 +633,12 @@ fn valence_score(a: &NewAnalysis) -> f64 {
     let rhythm_contrib = rhythm_norm * 25.0;
 
     // 4. Modality (20 pts): major key = positive valence, minor = lower
-    // Per-frame K-K profile classification and chord-level major/minor ratio.
-    // major_frame_ratio: 0.0 (all minor) to 1.0 (all major)
-    // major_chord_ratio: fraction of chords detected as major
-    let frame_ratio = a.major_frame_ratio.unwrap_or(0.5);
+    // Uses chord-level major/minor ratio only — frame-level K-K correlation is
+    // bimodal (0.0 or 1.0) and unreliable on live recordings (noise/drums
+    // correlate with major profiles, giving "Tuning" higher valence than "Big River").
+    // Chord detection is more robust: harmonic analysis knows major vs minor chords.
     let chord_ratio = a.major_chord_ratio.unwrap_or(0.5);
-    let major_ratio = (frame_ratio + chord_ratio) / 2.0;
-    let modality_contrib = major_ratio * 20.0;
+    let modality_contrib = chord_ratio * 20.0;
 
     (bright_contrib + smooth_contrib + rhythm_contrib + modality_contrib).clamp(0.0, 100.0)
 }
