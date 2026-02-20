@@ -97,8 +97,11 @@ impl Database {
         if version < 15 {
             self.migrate_v15()?;
         }
+        if version < 16 {
+            self.migrate_v16()?;
+        }
 
-        self.conn.pragma_update(None, "user_version", 15)?;
+        self.conn.pragma_update(None, "user_version", 16)?;
         Ok(())
     }
 
@@ -598,6 +601,15 @@ impl Database {
     fn migrate_v15(&self) -> Result<()> {
         try_add_column(&self.conn, "analysis_results", "major_frame_ratio REAL")?;
         try_add_column(&self.conn, "analysis_results", "major_chord_ratio REAL")?;
+        Ok(())
+    }
+
+    /// V16: Dynamics trajectory + key change count for cross-genre analysis
+    fn migrate_v16(&self) -> Result<()> {
+        try_add_column(&self.conn, "analysis_results", "dynamics_entropy REAL")?;
+        try_add_column(&self.conn, "analysis_results", "dynamics_slope REAL")?;
+        try_add_column(&self.conn, "analysis_results", "dynamics_peak_count INTEGER")?;
+        try_add_column(&self.conn, "analysis_results", "key_change_count INTEGER")?;
         Ok(())
     }
 }

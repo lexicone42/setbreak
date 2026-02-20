@@ -807,6 +807,8 @@ mod tests {
             harmonic_percussive_ratio: None, chromagram_entropy: None,
             spectral_contrast_slope: None, spectral_contrast_range: None,
             onset_strength_contour_json: None, section_diversity_score: None,
+            dynamics_entropy: None, dynamics_slope: None,
+            dynamics_peak_count: None, key_change_count: None,
             valence_score: None,
             arousal_score: None,
             energy_score: None,

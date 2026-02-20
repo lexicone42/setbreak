@@ -246,6 +246,12 @@ pub struct NewAnalysis {
     pub major_frame_ratio: Option<f64>,  // fraction of frames classified as major (0-1)
     pub major_chord_ratio: Option<f64>,  // fraction of detected chords that are major (0-1)
 
+    // v16: Dynamics trajectory + key change count
+    pub dynamics_entropy: Option<f64>,     // Shannon entropy of LUFS histogram (0-1)
+    pub dynamics_slope: Option<f64>,       // LUFS/minute linear trend (positive = crescendo)
+    pub dynamics_peak_count: Option<i32>,  // loudness peaks with ≥3 LU prominence
+    pub key_change_count: Option<i32>,     // key changes across 30s windows
+
     // Quality
     pub recording_quality_score: Option<f64>,
     pub snr_db: Option<f64>,

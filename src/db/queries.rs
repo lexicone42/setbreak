@@ -264,6 +264,7 @@ impl Database {
                 improvisation_score, tightness_score, build_quality_score,
                 exploratory_score, transcendence_score,
                 major_frame_ratio, major_chord_ratio,
+                dynamics_entropy, dynamics_slope, dynamics_peak_count, key_change_count,
                 analyzed_at
             ) VALUES (
                 ?1,
@@ -333,6 +334,7 @@ impl Database {
                 ?179, ?180, ?181,
                 ?182, ?183,
                 ?184, ?185,
+                ?186, ?187, ?188, ?189,
                 datetime('now')
             )
             ON CONFLICT(track_id) DO UPDATE SET
@@ -507,6 +509,10 @@ impl Database {
                 transcendence_score = excluded.transcendence_score,
                 major_frame_ratio = excluded.major_frame_ratio,
                 major_chord_ratio = excluded.major_chord_ratio,
+                dynamics_entropy = excluded.dynamics_entropy,
+                dynamics_slope = excluded.dynamics_slope,
+                dynamics_peak_count = excluded.dynamics_peak_count,
+                key_change_count = excluded.key_change_count,
                 analyzed_at = datetime('now')
             ",
             params![
@@ -578,6 +584,7 @@ impl Database {
                 a.improvisation_score, a.tightness_score, a.build_quality_score,
                 a.exploratory_score, a.transcendence_score,
                 a.major_frame_ratio, a.major_chord_ratio,
+                a.dynamics_entropy, a.dynamics_slope, a.dynamics_peak_count, a.key_change_count,
             ],
         )?;
         Ok(())
@@ -740,6 +747,8 @@ impl Database {
                     chroma_self_similarity_bandwidth: None,
                     spectral_contrast_slope: None, spectral_contrast_range: None,
                     onset_strength_contour_json: None, section_diversity_score: None,
+                    dynamics_entropy: None, dynamics_slope: None,
+                    dynamics_peak_count: None, key_change_count: None,
                     valence_score: None, arousal_score: None,
                     energy_score: None, intensity_score: None,
                     groove_score: None, improvisation_score: None,
@@ -1586,6 +1595,8 @@ mod tests {
             harmonic_percussive_ratio: None, chromagram_entropy: None,
             spectral_contrast_slope: None, spectral_contrast_range: None,
             onset_strength_contour_json: None, section_diversity_score: None,
+            dynamics_entropy: None, dynamics_slope: None,
+            dynamics_peak_count: None, key_change_count: None,
             valence_score: None, arousal_score: None,
             energy_score: None, intensity_score: None, groove_score: None,
             improvisation_score: None, tightness_score: None,

@@ -424,6 +424,12 @@ pub fn extract(track_id: i64, r: &AnalysisResult) -> ExtractionResult {
         major_frame_ratio: Some(r.musical.major_frame_ratio as f64),
         major_chord_ratio: Some(r.musical.major_chord_ratio as f64),
 
+        // v16: Dynamics trajectory + key change count
+        dynamics_entropy: Some(r.perceptual.dynamics_entropy as f64),
+        dynamics_slope: Some(r.perceptual.dynamics_slope as f64),
+        dynamics_peak_count: Some(r.perceptual.dynamics_peak_count as i32),
+        key_change_count: Some(r.musical.key_change_count as i32),
+
         // Quality
         recording_quality_score: Some(r.quality.overall_score as f64),
         snr_db: Some(r.quality.metrics.snr_db as f64),

@@ -11,7 +11,7 @@ categories = ["multimedia::audio", "command-line-utilities"]
 
 [dependencies]
 # Audio analysis (fork of willibrandon/ferrous-waves with setbreak optimizations)
-ferrous-waves = { git = "https://github.com/lexicone42/ferrous-waves.git" }
+ferrous-waves = { path = "../ferrous-waves" }
 
 # Database
 rusqlite = { version = "0.32", features = ["bundled"] }
