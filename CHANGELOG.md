@@ -7,15 +7,25 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versioning follo
 ## [Unreleased]
 
 ### Added
+- **v16 features**: dynamics_entropy, dynamics_slope, dynamics_peak_count (LUFS contour analysis), key_change_count (30s-window modulation detection), time_sig_numerator/denominator (autocorrelation-based estimation)
+- **v15 features**: major_frame_ratio (per-frame K-K major/minor), major_chord_ratio (chord-level major fraction)
 - **v14 features**: Harmonic-percussive ratio, chromagram entropy, spectral contrast slope/range, onset strength contour (DCT), section diversity score
 - **v13 features**: Spectral spread, spectral crest, roughness, stereo width, MFCC deltas/delta-deltas, attack/decay times, onset strength stats, swing ratio, microtiming, temporal modulation, chroma self-similarity
 - **v12 features**: Spectral contrast (7-band), tonnetz (6D tonal space), chroma flux, sub-band flux, beat patterns, syncopation, pulse clarity, offbeat ratio
 - **v9-v11 features**: 26 per-frame derived features (slopes, correlations, entropy, distributional statistics)
-- **ANALYZER.md**: Comprehensive reference for all 185 extracted features and 10 jam scores
+- **ANALYZER.md**: Comprehensive reference for all extracted features and 10 jam scores
 
 ### Changed
-- Analysis column count: 100+ → 185
-- Schema version: v6 → v14
+- **Groove v5**: Added tempo_stability (15pts) — stable tempo indicates locked-in groove
+- **Tightness v4**: Added tempo_stability (20pts) — most direct measure of rhythmic precision
+- **Improvisation v4**: Added key_change_count/min (20pts) — harmonic modulations indicate improvisation
+- **Exploratory v4**: Added key_change_count/min (20pts) + harmonic_complexity (15pts) — harmonic territory covered
+- **Intensity v2**: Added dynamics_entropy (15pts) — variety of loudness levels visited
+- **Arousal v3**: Re-added tempo_bpm (15pts) — now fixed (1631 distinct vals, was degenerate at 28)
+- **Build Quality v3 fallback**: Replaced energy_variance with dynamics_peak_count/min (20pts)
+- `get_analyses_for_rescore` now loads v16 features (dynamics_entropy, dynamics_slope, dynamics_peak_count, key_change_count, rhythmic_periodicity_strength)
+- Analysis column count: 100+ → 190
+- Schema version: v6 → v16
 
 ## [0.3.0] - 2025-02-17
 

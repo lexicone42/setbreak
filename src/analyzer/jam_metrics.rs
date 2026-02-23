@@ -73,32 +73,41 @@ fn energy_score(a: &NewAnalysis) -> f64 {
 }
 
 // ── Intensity Score (0-100) ───────────────────────────────────────────
-// How much the music *varies* in energy — flux and dynamics.
+// How much the music *varies* in energy — flux, dynamics, and loudness contour.
+//
+// v2: Added dynamics_entropy (15pts) — entropy of the LUFS histogram measures
+// how many different loudness levels the track visits. High entropy = the music
+// moves through many dynamic levels. Library: 0-0.99, avg 0.74.
 fn intensity_score(a: &NewAnalysis) -> f64 {
     let flux_std = a.spectral_flux_std.unwrap_or(0.0);
     let dynamic_range = a.dynamic_range.unwrap_or(0.0);
     let loudness_range = a.loudness_range.unwrap_or(0.0);
 
     let flux_norm = (flux_std / 50.0).clamp(0.0, 1.0);
-    let flux_contrib = flux_norm * 40.0;
+    let flux_contrib = flux_norm * 35.0;
 
     let dr_norm = (dynamic_range / 30.0).clamp(0.0, 1.0);
-    let dr_contrib = dr_norm * 30.0;
+    let dr_contrib = dr_norm * 25.0;
 
     let lr_norm = (loudness_range / 20.0).clamp(0.0, 1.0);
-    let lr_contrib = lr_norm * 30.0;
+    let lr_contrib = lr_norm * 25.0;
 
-    (flux_contrib + dr_contrib + lr_contrib).clamp(0.0, 100.0)
+    // Dynamics entropy (15 pts): variety of loudness levels visited
+    // Library: 0-0.99, avg 0.74. Map: 0.3 → 0.0, 0.95 → 1.0
+    let dyn_ent = a.dynamics_entropy.unwrap_or(0.7);
+    let ent_norm = ((dyn_ent - 0.3) / 0.65).clamp(0.0, 1.0);
+    let ent_contrib = ent_norm * 15.0;
+
+    (flux_contrib + dr_contrib + lr_contrib + ent_contrib).clamp(0.0, 100.0)
 }
 
 // ── Groove Score (0-100) ──────────────────────────────────────────────
 // How steady and compelling the rhythm is.
 //
-// v4: Widened flux_cv and bass_cv normalization ranges to raise the ceiling from 55
-// to ~75. Capped repetition_similarity above 0.98 — values near 1.0 indicate
-// non-music (crowd noise, tuning) not groove. Added onset_strength_mean gate
-// to filter out non-musical steady signals (crowd ambience has steady spectrum
-// but weak onset attacks).
+// v5: Added tempo_stability (15pts) — stable tempo is fundamental to groove.
+// Now that tempo_stability is no longer degenerate (0-1.0, p50=0.62), it
+// directly captures whether the band maintains a consistent pulse.
+// Redistributed: flux_cv 40→35, bass_cv 25→20, repetition 25→20, onset 10→10.
 fn groove_score(a: &NewAnalysis) -> f64 {
     let duration = a.duration.unwrap_or(1.0).max(1.0);
     let onset_count = a.onset_count.unwrap_or(0) as f64;
@@ -134,65 +143,80 @@ fn groove_score(a: &NewAnalysis) -> f64 {
     };
     let onset_contrib = onset_sweet.clamp(0.0, 1.0) * 10.0;
 
-    // 2. Rhythmic consistency (40 pts): flux CV — strongest differentiator
+    // 2. Rhythmic consistency (35 pts): flux CV — strongest differentiator
     // Library flux_cv: avg 0.666, tight grooves 0.3-0.5, loose jams 0.8-1.5+
-    // Widened from (1.0-cv) to (1.2-cv)/1.0 so tight songs can reach ~36/40
     let flux_cv = if flux_mean > 0.5 { flux_std / flux_mean } else { 2.0 };
     let flux_score = ((1.2 - flux_cv) / 1.0).clamp(0.0, 1.0);
-    let flux_contrib = flux_score * 40.0;
+    let flux_contrib = flux_score * 35.0;
 
-    // 3. Bass steadiness (25 pts): groove lives in the bass
+    // 3. Bass steadiness (20 pts): groove lives in the bass
     // Library bass_cv: avg 0.64, range 0.07-1.75
-    // Widened from (1.0 - cv*0.7) to explicit mapping: 0.2 → 1.0, 1.2 → 0.0
     let bass_cv = if bass_mean > 0.01 { bass_std / bass_mean } else { 1.5 };
     let bass_score = ((1.2 - bass_cv) / 1.0).clamp(0.0, 1.0);
-    let bass_contrib = bass_score * 25.0;
+    let bass_contrib = bass_score * 20.0;
 
-    // 4. Pattern repetition (25 pts): groove IS repetition — but cap at 0.98
+    // 4. Pattern repetition (20 pts): groove IS repetition — but cap at 0.98
     // Values above 0.98 typically indicate non-music (crowd noise, tuning drone)
-    // Library: avg 0.90, range 0.80-0.999
     let rep_capped = rep_sim.min(0.98);
     let rep_score = ((rep_capped - 0.82) / 0.16).clamp(0.0, 1.0);
-    let rep_contrib = rep_score * 25.0;
+    let rep_contrib = rep_score * 20.0;
 
-    let raw = (onset_contrib + flux_contrib + bass_contrib + rep_contrib).clamp(0.0, 100.0);
+    // 5. Tempo stability (15 pts): stable tempo = locked-in groove
+    // Library: p5=0.35, p50=0.62, p95=1.0. Map: 0.3 → 0.0, 0.9 → 1.0
+    let tempo_stab = a.tempo_stability.unwrap_or(0.5);
+    let tempo_norm = ((tempo_stab - 0.3) / 0.6).clamp(0.0, 1.0);
+    let tempo_contrib = tempo_norm * 15.0;
+
+    let raw = (onset_contrib + flux_contrib + bass_contrib + rep_contrib + tempo_contrib)
+        .clamp(0.0, 100.0);
     (raw * music_gate).clamp(0.0, 100.0)
 }
 
 // ── Improvisation Score (0-100) ───────────────────────────────────────
 // How much the music departs from repetitive structure.
-// Uses non-repetition, timbral variety, duration-normalized structural density,
-// and tonal ambiguity (mode clarity).
+//
+// v4: Added key_change_count (20pts) — modulations between keys are a direct
+// measure of harmonic improvisation. Dark Star averaging 28-40 key changes vs
+// AC/DC Bag at 0 validates this feature musically. Normalized per minute to
+// avoid penalizing shorter tracks.
 fn improvisation_score(a: &NewAnalysis) -> f64 {
-    // 1. Non-repetition (30 pts): low repetition similarity = improvised
+    let duration_secs = a.duration.unwrap_or(180.0).max(30.0);
+
+    // 1. Non-repetition (25 pts): low repetition similarity = improvised
     // Library range: 0.80-0.99, avg 0.90
     let rep_sim = a.repetition_similarity.unwrap_or(0.9);
     let non_rep = (1.0 - (rep_sim - 0.80) / 0.20).clamp(0.0, 1.0);
-    let non_rep_contrib = non_rep * 30.0;
+    let non_rep_contrib = non_rep * 25.0;
 
-    // 2. Timbral variety (25 pts): high centroid std = exploring tonal space
+    // 2. Timbral variety (20 pts): high centroid std = exploring tonal space
     // Library range: 144-3595, avg 991
     let centroid_std = a.spectral_centroid_std.unwrap_or(500.0);
     let timbre_variety = ((centroid_std - 200.0) / 3000.0).clamp(0.0, 1.0);
-    let timbre_contrib = timbre_variety * 25.0;
+    let timbre_contrib = timbre_variety * 20.0;
 
-    // 3. Structural density (25 pts): transitions per minute, not raw count
-    // Normalizes for duration so a 5-min song with 10 transitions scores
-    // higher than a 20-min song with 10.
+    // 3. Structural density (20 pts): transitions per minute, not raw count
     let transitions = a.transition_count.unwrap_or(0) as f64;
-    let duration_secs = a.duration.unwrap_or(180.0).max(30.0);
     let trans_per_min = transitions * 60.0 / duration_secs;
     let trans_norm = (trans_per_min / 5.0).clamp(0.0, 1.0);
-    let trans_contrib = trans_norm * 25.0;
+    let trans_contrib = trans_norm * 20.0;
 
-    // 4. Tonal ambiguity (20 pts): low mode clarity = harmonically wandering
-    // v15 range: 0.003-0.97, avg 0.44 (v14 was degenerate: 0.05-0.51, avg 0.15)
-    // K-K 4-mode correlation gap gives much wider, more meaningful range.
+    // 4. Tonal ambiguity (15 pts): low mode clarity = harmonically wandering
+    // Library: 0.0001-1.0, avg 0.34. K-K 4-mode correlation gap.
     let mode_clarity = a.mode_clarity.unwrap_or(0.3);
     let tonal_ambiguity = (1.0 - mode_clarity).clamp(0.0, 1.0);
-    let tonal_contrib = tonal_ambiguity * 20.0;
+    let tonal_contrib = tonal_ambiguity * 15.0;
 
-    (non_rep_contrib + timbre_contrib + trans_contrib + tonal_contrib).clamp(0.0, 100.0)
+    // 5. Key modulations (20 pts): key changes per minute — harmonic wandering
+    // Library: p5=0, p50=6, p95=19. Dark Star 28-40, AC/DC Bag 0.
+    // Normalize per minute: p50 ≈ 0.5/min for a 12-min track.
+    // Map: 0 → 0.0, 1.5/min → 1.0
+    let key_changes = a.key_change_count.unwrap_or(0) as f64;
+    let changes_per_min = key_changes * 60.0 / duration_secs;
+    let key_norm = (changes_per_min / 1.5).clamp(0.0, 1.0);
+    let key_contrib = key_norm * 20.0;
+
+    (non_rep_contrib + timbre_contrib + trans_contrib + tonal_contrib + key_contrib)
+        .clamp(0.0, 100.0)
 }
 
 // ── Tightness Score (0-100) ───────────────────────────────────────────
@@ -200,39 +224,46 @@ fn improvisation_score(a: &NewAnalysis) -> f64 {
 // timbral delivery, steady energy. Differentiates tight grooves (Sugar Magnolia,
 // Fire on the Mountain) from free-form playing (Drums, Space, Dark Star jams).
 //
-// v3: Dropped pitch_stability (anti-correlated — ambient/drone scores higher than
-// tight grooves) and beat-onset ratio (doesn't differentiate — 97% of tracks in
-// the sweet spot). Added ZCR consistency and rhythmic presence.
+// v4: Added tempo_stability (20pts) — the most direct measure of rhythmic
+// tightness. A band that maintains a steady BPM throughout is locked in.
+// Library: p5=0.35, p50=0.62, p95=1.0. Now that tempo_stability is no longer
+// degenerate, it's the second-strongest tightness indicator after flux_cv.
 fn tightness_score(a: &NewAnalysis) -> f64 {
     let duration = a.duration.unwrap_or(1.0).max(1.0);
     let onset_count = a.onset_count.unwrap_or(0) as f64;
 
-    // 1. Flux consistency (30 pts): low CV = steady energy delivery — best differentiator
+    // 1. Flux consistency (25 pts): low CV = steady energy delivery — best differentiator
     // Library: avg CV 0.666, tight songs 0.4-0.7, Drums 0.9-1.7
     let flux_mean = a.spectral_flux_mean.unwrap_or(0.0);
     let flux_std = a.spectral_flux_std.unwrap_or(0.0);
     let flux_cv = if flux_mean > 0.5 { flux_std / flux_mean } else { 2.0 };
     // Map: 0.3 → 1.0, 1.1 → 0.0
     let flux_score = ((1.1 - flux_cv) / 0.8).clamp(0.0, 1.0);
-    let flux_contrib = flux_score * 30.0;
+    let flux_contrib = flux_score * 25.0;
 
-    // 2. ZCR consistency (25 pts): low ZCR CV = consistent timbral character
+    // 2. Tempo stability (20 pts): stable BPM = tight rhythm section
+    // Library: p5=0.35, p50=0.62, p95=1.0. Map: 0.25 → 0.0, 0.85 → 1.0
+    let tempo_stab = a.tempo_stability.unwrap_or(0.5);
+    let tempo_norm = ((tempo_stab - 0.25) / 0.6).clamp(0.0, 1.0);
+    let tempo_contrib = tempo_norm * 20.0;
+
+    // 3. ZCR consistency (20 pts): low ZCR CV = consistent timbral character
     // Library: avg CV 0.488, tight songs 0.2-0.5, Drums 0.5-1.2
     let zcr_mean = a.zcr_mean.unwrap_or(0.0);
     let zcr_std = a.zcr_std.unwrap_or(0.0);
     let zcr_cv = if zcr_mean > 0.001 { zcr_std / zcr_mean } else { 1.5 };
     // Map: 0.2 → 1.0, 1.0 → 0.0
     let zcr_score = ((1.0 - zcr_cv) / 0.8).clamp(0.0, 1.0);
-    let zcr_contrib = zcr_score * 25.0;
+    let zcr_contrib = zcr_score * 20.0;
 
-    // 3. Spectral flatness consistency (25 pts): low std = consistent tonal character
+    // 4. Spectral flatness consistency (20 pts): low std = consistent tonal character
     // Library: avg 0.088, tight songs 0.025-0.10, Drums 0.05-0.18
     let flat_std = a.spectral_flatness_std.unwrap_or(0.15);
     // Map: 0.02 → 1.0, 0.16 → 0.0
     let flat_score = ((0.16 - flat_std) / 0.14).clamp(0.0, 1.0);
-    let flat_contrib = flat_score * 25.0;
+    let flat_contrib = flat_score * 20.0;
 
-    // 4. Rhythmic presence (20 pts): steady onset rate in groove zone = tight
+    // 5. Rhythmic presence (15 pts): steady onset rate in groove zone = tight
     // Penalizes Space/ambient (sparse onsets) and chaotic playing (too many).
     // Library: avg 9/sec, groove zone 5-11/sec
     let onset_rate = if duration > 0.0 { onset_count / duration } else { 0.0 };
@@ -247,9 +278,9 @@ fn tightness_score(a: &NewAnalysis) -> f64 {
     } else {
         (0.5 - (onset_rate - 14.0) / 20.0).max(0.0) // chaotic
     };
-    let rhythm_contrib = rhythm_score.clamp(0.0, 1.0) * 20.0;
+    let rhythm_contrib = rhythm_score.clamp(0.0, 1.0) * 15.0;
 
-    (flux_contrib + zcr_contrib + flat_contrib + rhythm_contrib).clamp(0.0, 100.0)
+    (flux_contrib + tempo_contrib + zcr_contrib + flat_contrib + rhythm_contrib).clamp(0.0, 100.0)
 }
 
 // ── Build Quality Score (0-100) ───────────────────────────────────────
@@ -274,7 +305,12 @@ fn build_quality_score(a: &NewAnalysis, segment_energies: Option<&[(f64, f64)]>)
     build_quality_score_fallback(a)
 }
 
-/// Fallback: whole-track aggregate formula (original build_quality_score).
+/// Fallback: whole-track aggregate formula for short tracks or missing segments.
+///
+/// v3: Replaced energy_variance (low discriminative power — range 0-0.01,
+/// effectively 2-value after clamping) with dynamics_peak_count (peaks per minute
+/// in the LUFS contour). Library: p5=20/min, p50=78/min, p95=115/min.
+/// More loudness peaks = more dynamic events = more build opportunities.
 fn build_quality_score_fallback(a: &NewAnalysis) -> f64 {
     let duration = a.duration.unwrap_or(1.0).max(1.0);
 
@@ -288,10 +324,13 @@ fn build_quality_score_fallback(a: &NewAnalysis) -> f64 {
     let lra_norm = ((lra - 1.0) / 20.0).clamp(0.0, 1.0);
     let lra_contrib = lra_norm * 25.0;
 
-    // 3. Energy variance (20 pts): variation in energy = dynamic movement
-    let e_var = a.energy_variance.unwrap_or(0.0);
-    let var_norm = (e_var / 0.01).clamp(0.0, 1.0);
-    let var_contrib = var_norm * 20.0;
+    // 3. Dynamics peak density (20 pts): loudness peaks per minute
+    // Library: p5=20/min, p50=78/min, p95=115/min. More peaks = more dynamic events.
+    // Map: 20/min → 0.0, 100/min → 1.0
+    let peak_count = a.dynamics_peak_count.unwrap_or(0) as f64;
+    let peaks_per_min = peak_count * 60.0 / duration;
+    let peak_norm = ((peaks_per_min - 20.0) / 80.0).clamp(0.0, 1.0);
+    let peak_contrib = peak_norm * 20.0;
 
     // 4. Transition density (25 pts): transitions per minute = structural dynamism
     let transitions = a.transition_count.unwrap_or(0) as f64;
@@ -299,7 +338,7 @@ fn build_quality_score_fallback(a: &NewAnalysis) -> f64 {
     let trans_norm = (trans_per_min / 5.0).clamp(0.0, 1.0);
     let trans_contrib = trans_norm * 25.0;
 
-    (crest_contrib + lra_contrib + var_contrib + trans_contrib).clamp(0.0, 100.0)
+    (crest_contrib + lra_contrib + peak_contrib + trans_contrib).clamp(0.0, 100.0)
 }
 
 /// A detected build arc in the energy contour.
@@ -493,12 +532,12 @@ fn build_quality_from_segments(energies: &[(f64, f64)], duration: f64) -> f64 {
 }
 
 // ── Exploratory Score (0-100) ─────────────────────────────────────────
-// How much musical territory is covered — timbral, textural, structural.
+// How much musical territory is covered — timbral, textural, harmonic.
 //
-// v3: Replaced mode_ambiguity (near-saturated — mode_clarity range 0.05-0.22,
-// so 90%+ of tracks scored 15-25/25) with chromagram_entropy (wider effective
-// range, directly measures pitch-class variety). Widened flatness_std normalization
-// for better spread. Duration gating remains at 60s.
+// v4: Added key_change_count (15pts) — modulations between keys directly measure
+// harmonic territory covered. Added harmonic_complexity (10pts) — now that it's
+// no longer degenerate (0-1.0, avg 0.43), it captures chord richness.
+// Duration gating remains at 60s.
 fn exploratory_score(a: &NewAnalysis) -> f64 {
     let duration = a.duration.unwrap_or(1.0).max(1.0);
 
@@ -513,35 +552,48 @@ fn exploratory_score(a: &NewAnalysis) -> f64 {
         1.0
     };
 
-    // 1. Spectral flatness variety (25 pts): variation between tonal and noisy moments
-    // Library range: 0.05-0.26, avg 0.09. Widened normalization for better spread.
+    // 1. Spectral flatness variety (20 pts): variation between tonal and noisy moments
+    // Library range: 0.05-0.26, avg 0.09
     let flat_std = a.spectral_flatness_std.unwrap_or(0.05);
     let flat_norm = ((flat_std - 0.03) / 0.27).clamp(0.0, 1.0);
-    let flat_contrib = flat_norm * 25.0;
+    let flat_contrib = flat_norm * 20.0;
 
-    // 2. Pitch confidence inverse (25 pts): uncertain pitch = exploring tonal space
+    // 2. Pitch confidence inverse (15 pts): uncertain pitch = exploring tonal space
     // Library range: 0.028-0.845, avg 0.58
     let pitch_conf = a.pitch_confidence_mean.unwrap_or(0.5);
     let pitch_explore = (1.0 - pitch_conf).clamp(0.0, 1.0);
-    let pitch_contrib = pitch_explore * 25.0;
+    let pitch_contrib = pitch_explore * 15.0;
 
-    // 3. Transition density (25 pts): transitions per minute
+    // 3. Transition density (15 pts): transitions per minute
     // Library range: 0-27/min
     let transitions = a.transition_count.unwrap_or(0) as f64;
     let trans_per_min = transitions / (duration / 60.0);
     let trans_norm = (trans_per_min / 5.0).clamp(0.0, 1.0);
-    let trans_contrib = trans_norm * 25.0;
+    let trans_contrib = trans_norm * 15.0;
 
-    // 4. Chromatic variety (25 pts): chromagram entropy — pitch-class diversity
+    // 4. Chromatic variety (15 pts): chromagram entropy — pitch-class diversity
     // Library: 0.056-2.464, avg 2.25. Max theoretical = ln(12) ≈ 2.485.
-    // Most tracks near max (2.0-2.4), low values indicate focused pitch usage.
-    // High exploratory avg 2.28 vs low avg 2.18 (diff +0.095).
     let chroma_ent = a.chromagram_entropy.unwrap_or(2.25);
     // Map: 1.8 → 0.0, 2.45 → 1.0
     let chroma_norm = ((chroma_ent - 1.8) / 0.65).clamp(0.0, 1.0);
-    let chroma_contrib = chroma_norm * 25.0;
+    let chroma_contrib = chroma_norm * 15.0;
 
-    let raw = (flat_contrib + pitch_contrib + trans_contrib + chroma_contrib).clamp(0.0, 100.0);
+    // 5. Key modulations (20 pts): key changes per minute — harmonic exploration
+    // Library: p50=6, p95=19. Dark Star jams 28-60, structured songs 0-3.
+    let key_changes = a.key_change_count.unwrap_or(0) as f64;
+    let changes_per_min = key_changes * 60.0 / duration;
+    let key_norm = (changes_per_min / 1.5).clamp(0.0, 1.0);
+    let key_contrib = key_norm * 20.0;
+
+    // 6. Harmonic complexity (15 pts): richness of chord vocabulary
+    // Library: 0-1.0, avg 0.43. Higher = more complex harmonic language.
+    let harm_complex = a.harmonic_complexity.unwrap_or(0.4);
+    let harm_norm = harm_complex.clamp(0.0, 1.0);
+    let harm_contrib = harm_norm * 15.0;
+
+    let raw = (flat_contrib + pitch_contrib + trans_contrib + chroma_contrib
+        + key_contrib + harm_contrib)
+        .clamp(0.0, 100.0);
     (raw * duration_factor).clamp(0.0, 100.0)
 }
 
@@ -646,26 +698,32 @@ fn valence_score(a: &NewAnalysis) -> f64 {
 // ── Arousal Score (0-100) ──────────────────────────────────────────────
 // Russell circumplex vertical axis: energetic (high) ↔ calm (low).
 //
-// v2: Replaced tempo_bpm (degenerate — clustered at 225/112/82, double-time artifacts)
-// with roughness_mean (50x better differentiation between high/low arousal tracks).
-// Roughness captures sonic intensity (distortion, aggression) that pure loudness misses.
-// Library roughness: p5=1.5, avg=6.3, p95=12.2, bulk in 2-10 range.
+// v3: Re-added tempo_bpm (15pts) — now that BPM detection uses 30-300 range with
+// octave ambiguity correction, the distribution is healthy (1631 distinct vals,
+// 30-313 BPM). Faster tempo is strongly associated with higher physiological
+// arousal in music psychology research. Kept roughness from v2 (still valuable).
 fn arousal_score(a: &NewAnalysis) -> f64 {
-    // Energy component (30 pts)
+    // Energy component (25 pts)
     let energy = a.energy_level.unwrap_or(0.0);
-    let energy_contrib = energy.clamp(0.0, 1.0) * 30.0;
+    let energy_contrib = energy.clamp(0.0, 1.0) * 25.0;
 
-    // Roughness component (25 pts): rough/distorted = high arousal, clean/smooth = low
-    // Library: 0.06-190, p5=1.5, p95=12.2, bulk 2-10. Normalize to 0-15 range.
+    // Roughness component (20 pts): rough/distorted = high arousal, clean/smooth = low
+    // Library: 0.06-190, p5=1.5, p95=12.2, bulk 2-10.
     let roughness = a.roughness_mean.unwrap_or(3.0);
     let roughness_norm = (roughness / 15.0).clamp(0.0, 1.0);
-    let roughness_contrib = roughness_norm * 25.0;
+    let roughness_contrib = roughness_norm * 20.0;
 
-    // Spectral flux component (20 pts): more spectral change → more arousal
-    // Library: 0.5-90, avg 29. Widened from /50 to /60 for better spread.
+    // Tempo component (15 pts): faster tempo = more aroused
+    // Library: 30-313, avg 124, p50≈115. Map: 60 → 0.0, 180 → 1.0
+    let bpm = a.tempo_bpm.unwrap_or(100.0);
+    let tempo_norm = ((bpm - 60.0) / 120.0).clamp(0.0, 1.0);
+    let tempo_contrib = tempo_norm * 15.0;
+
+    // Spectral flux component (15 pts): more spectral change → more arousal
+    // Library: 0.5-90, avg 29.
     let flux = a.spectral_flux_mean.unwrap_or(0.0);
     let flux_norm = (flux / 60.0).clamp(0.0, 1.0);
-    let flux_contrib = flux_norm * 20.0;
+    let flux_contrib = flux_norm * 15.0;
 
     // Loudness component (25 pts): louder = more aroused
     // Library: -68 to -31 LUFS, avg -41. Narrowed range for live tapes.
@@ -673,7 +731,8 @@ fn arousal_score(a: &NewAnalysis) -> f64 {
     let lufs_norm = ((lufs + 55.0) / 25.0).clamp(0.0, 1.0);
     let lufs_contrib = lufs_norm * 25.0;
 
-    (energy_contrib + roughness_contrib + flux_contrib + lufs_contrib).clamp(0.0, 100.0)
+    (energy_contrib + roughness_contrib + tempo_contrib + flux_contrib + lufs_contrib)
+        .clamp(0.0, 100.0)
 }
 
 #[cfg(test)]

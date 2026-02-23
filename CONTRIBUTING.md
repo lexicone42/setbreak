@@ -41,7 +41,7 @@ src/
   similarity.rs        Track similarity
 ```
 
-See [ANALYZER.md](ANALYZER.md) for details on all 185 extracted features and the 10 jam scores.
+See [ANALYZER.md](ANALYZER.md) for details on all 190 extracted features and the 10 jam scores.
 
 ## Adding a new band
 

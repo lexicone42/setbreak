@@ -619,7 +619,10 @@ impl Database {
                 roughness_mean, spectral_crest_mean,
                 onset_strength_mean,
                 harmonic_percussive_ratio, chromagram_entropy,
-                major_frame_ratio, major_chord_ratio
+                major_frame_ratio, major_chord_ratio,
+                dynamics_entropy, dynamics_slope,
+                dynamics_peak_count, key_change_count,
+                rhythmic_periodicity_strength
              FROM analysis_results",
         )?;
         let rows = stmt
@@ -674,6 +677,11 @@ impl Database {
                     chromagram_entropy: row.get(46)?,
                     major_frame_ratio: row.get(47)?,
                     major_chord_ratio: row.get(48)?,
+                    dynamics_entropy: row.get(49)?,
+                    dynamics_slope: row.get(50)?,
+                    dynamics_peak_count: row.get(51)?,
+                    key_change_count: row.get(52)?,
+                    rhythmic_periodicity_strength: row.get(53)?,
                     // Fields not needed for scoring — set to None/defaults
                     sample_rate: None, channels: None, peak_amplitude: None,
                     spectral_rolloff_mean: None, spectral_rolloff_std: None,
@@ -722,7 +730,6 @@ impl Database {
                     beat_regularity: None,
                     peak_tension: None, tension_range: None,
                     energy_peak_count: None, energy_valley_depth_mean: None,
-                    rhythmic_periodicity_strength: None,
                     spectral_loudness_correlation: None,
                     spectral_skewness_mean: None, spectral_kurtosis_mean: None,
                     spectral_entropy_mean: None, spectral_entropy_std: None,
@@ -747,8 +754,6 @@ impl Database {
                     chroma_self_similarity_bandwidth: None,
                     spectral_contrast_slope: None, spectral_contrast_range: None,
                     onset_strength_contour_json: None, section_diversity_score: None,
-                    dynamics_entropy: None, dynamics_slope: None,
-                    dynamics_peak_count: None, key_change_count: None,
                     valence_score: None, arousal_score: None,
                     energy_score: None, intensity_score: None,
                     groove_score: None, improvisation_score: None,

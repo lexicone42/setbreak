@@ -1,6 +1,6 @@
 # Analyzer Feature Reference
 
-setbreak extracts 185 features from every audio track using pure DSP — no machine learning models. All features are computed from the raw waveform via FFT, STFT, pitch detection, beat tracking, onset detection, and chord estimation, then stored in the `analysis_results` table.
+setbreak extracts 190 features from every audio track using pure DSP — no machine learning models. All features are computed from the raw waveform via FFT, STFT, pitch detection, beat tracking, onset detection, and chord estimation, then stored in the `analysis_results` table.
 
 The DSP engine is [ferrous-waves](https://github.com/lexicone42/ferrous-waves), a Rust audio analysis library. setbreak extends the raw analysis output with derived features (section diversity, segue detection, etc.) computed in `features.rs`.
 
@@ -261,15 +261,15 @@ Ten composite scores (0-100) are computed from the raw features above. Scores ar
 | Score | Formula inputs | What high scores mean |
 |-------|---------------|----------------------|
 | **Energy** | RMS (30pts) + LUFS (30pts) + sub-band bass (20pts) + spectral centroid (20pts) | Loud, full-spectrum, driving |
-| **Intensity** | Spectral flux variance + dynamic range + loudness range | Wild dynamic swings, intense moments |
-| **Groove** | Onset sweet spot 7-9/sec (20pts) + flux CV (30pts) + bass steadiness (25pts) + repetition (25pts) | Locked-in, danceable, steady pocket |
-| **Improvisation** | Non-repetition (30pts) + timbral variety (25pts) + structural density/min (25pts) + tonal ambiguity (20pts) | Unpredictable, exploratory, non-repeating |
-| **Tightness** | Tempo stability + coherence + spectral smoothness + beat strength | Precise, well-rehearsed, metronomic |
-| **Build Quality** | Energy arc detection + tension build/release + energy variance + transition smoothness | Long arcs, building tension, satisfying peaks |
-| **Exploratory** | Spectral flatness variety + pitch ambiguity + mode ambiguity + harmonic complexity + transitions | Weird, spacey, tonally adventurous |
-| **Transcendence** | Peak energy + sustained high-energy + peak tension + groove-energy synergy + harmonic richness | Transcendent peaks, sustained intensity, everything clicking |
-| **Valence** | Spectral brightness + tempo + mode + harmonic simplicity | Happy, bright, upbeat |
-| **Arousal** | RMS + spectral flux + onset rate + spectral bandwidth | Exciting, activating, high-energy |
+| **Intensity v2** | Flux std (35pts) + dynamic range (25pts) + loudness range (25pts) + dynamics entropy (15pts) | Wild dynamic swings, varied loudness levels |
+| **Groove v5** | Onset rate (10pts) + flux CV (35pts) + bass steadiness (20pts) + repetition (20pts) + tempo stability (15pts) + music gate | Locked-in, danceable, steady pocket |
+| **Improvisation v4** | Non-repetition (25pts) + timbral variety (20pts) + structural density/min (20pts) + tonal ambiguity (15pts) + key changes/min (20pts) | Unpredictable, harmonically wandering, non-repeating |
+| **Tightness v4** | Flux CV (25pts) + tempo stability (20pts) + ZCR CV (20pts) + flatness std (20pts) + onset rate (15pts) | Precise, well-rehearsed, metronomic |
+| **Build Quality v3** | Energy arc detection (primary, ≥90s) / fallback: crest (30pts) + LRA (25pts) + dynamics peaks/min (20pts) + transitions (25pts) | Long arcs, building tension, satisfying peaks |
+| **Exploratory v4** | Flatness std (20pts) + pitch ambiguity (15pts) + transitions (15pts) + chromagram entropy (15pts) + key changes/min (20pts) + harmonic complexity (15pts) | Weird, spacey, tonally adventurous |
+| **Transcendence v3** | Sustained energy (25pts) + harmonic richness (20pts) + groove×energy synergy (30pts) + spectral flux (25pts) | Transcendent peaks, sustained intensity, everything clicking |
+| **Valence v5** | Brightness (30pts) + inverse roughness (25pts) + onset rhythm (25pts) + major chord ratio (20pts) | Happy, bright, upbeat |
+| **Arousal v3** | Energy (25pts) + roughness (20pts) + tempo BPM (15pts) + spectral flux (15pts) + LUFS (25pts) | Exciting, activating, high-energy |
 
 ### Score calibration
 
@@ -281,7 +281,7 @@ Tracks with `data_quality = 'garbage'` (DTS bitstreams, extremely low SNR, heavy
 
 ## Relational detail tables
 
-Beyond the 185-column `analysis_results` table, setbreak stores per-event detail:
+Beyond the 190-column `analysis_results` table, setbreak stores per-event detail:
 
 | Table | Contents |
 |-------|----------|
@@ -306,7 +306,7 @@ Audio file
     → Pitch detection (pYIN) + key estimation + chord analysis
     → Structural segmentation + tension/transition detection
     → Perceptual metrics (LUFS, SNR, true peak)
-  → features.rs: Extract 185 columns from AnalysisResult
+  → features.rs: Extract 190 columns from AnalysisResult
   → jam_metrics.rs: Compute 10 jam scores from features
   → queries.rs: Upsert into SQLite
 ```
