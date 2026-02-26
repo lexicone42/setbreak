@@ -682,14 +682,13 @@ fn main() -> Result<()> {
                         let dest_path = format!("{}/{}", dest_dir, identifier);
 
                         println!("Downloading to: {}", dest_path);
-                        println!("Running: ia download {} --destdir={} --glob='{}' --no-directories",
+                        println!("Running: ia download {} --destdir={} --glob='{}'",
                             identifier, dest_dir, glob);
 
                         let status = std::process::Command::new("ia")
                             .args(["download", &identifier,
                                 &format!("--destdir={}", dest_dir),
-                                &format!("--glob={}", glob),
-                                "--no-directories"])
+                                &format!("--glob={}", glob)])
                             .status()
                             .context("Failed to run 'ia' command. Install with: pip install internetarchive")?;
 
