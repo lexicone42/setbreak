@@ -283,4 +283,99 @@ The Veneta Dark Star scores in the 99th percentile for improvisation and 98th fo
 
 ---
 
+## 10. Two Paths to Transcendence
+
+One of the cleanest findings in the data: there are two structurally distinct ways a track achieves peak experience.
+
+**Composed peaks**: transcendence > 60, improvisation < 25. Average duration 7.8 min. The song's structure itself creates the peak — a composed climax, an inevitable build, an emotional arc baked into the composition.
+
+**Improvised peaks**: transcendence > 60, improvisation >= 25. Average duration 13.4 min. The peak emerges from what the band does in the moment — extended exploration that finds a summit.
+
+| Peak Type | Count | Avg Duration | Build Quality | Groove | Energy |
+|-----------|-------|-------------|---------------|--------|--------|
+| Composed | 935 | 7.8 min | 49.6 | **44.3** | **64.5** |
+| Improvised | 1,246 | 13.4 min | **58.0** | 38.0 | 61.2 |
+| No peak | 7,499 | 6.0 min | 32.8 | 41.0 | 58.6 |
+
+Composed peaks are **grovier and more energetic**. Improvised peaks have **higher build quality** — they earned their climax through development. Both have identical valence (~34), meaning neither path is inherently "happier."
+
+### By Duration Bucket
+
+| Duration | % Composed Peak | % Improvised Peak | % No Peak |
+|----------|----------------|-------------------|-----------|
+| < 8 min | 8.9% | 1.7% | 89.4% |
+| 8-12 min | 15.4% | 24.6% | 60.0% |
+| 12-18 min | 2.3% | 57.7% | 40.1% |
+| 18+ min | 0.8% | 82.4% | 16.7% |
+
+Under 8 minutes, composed peaks outnumber improvised peaks **5:1**. The song's architecture has to do the work — there isn't enough time for extended improvisation to build. Above 18 minutes, 82.4% of tracks that achieve transcendence do so through improvisation. At that length, you're either improvising to a peak or you're not getting there.
+
+The crossover point is **8-12 minutes** — where both paths are viable and roughly equal.
+
+### By Band
+
+| Band | % of Peaks That Are Composed | Total Peaks |
+|------|------------------------------|-------------|
+| Dead | 39.2% | 1,190 |
+| Phish | **43.4%** | 889 |
+
+Phish relies more on composed peaks (43.4% vs 39.2%). This is consistent with their compositional approach — songs like Divided Sky and Slave have built-in climax architecture. The Dead rely more on improvisation to find their peaks — when it works, the payoff is higher (peak Dark Star > peak Divided Sky), but it's less reliable.
+
+### The Best Composed Peaks
+
+| Track | Date | Band | Min | Trn | Build | Imp |
+|-------|------|------|-----|-----|-------|-----|
+| Wingsuit | 10/31/13 | Phish | 6.3 | **79** | 74 | 18 |
+| Prince Caspian | 7/28/98 | Phish | 9.1 | 72 | 54 | 19 |
+| Sleeping Monkey | 12/30/97 | Phish | 6.2 | 71 | 51 | 15 |
+| 2001 | 12/6/96 | Phish | 9.5 | 70 | 52 | 19 |
+
+All Phish. The Dead's best composed peaks are unnamed tracks from 1971 and 1973 — harder to identify without setlist data for every track.
+
+---
+
+## 11. Best Shows
+
+### Top 10 Dead Shows (by average transcendence, 8+ tracks)
+
+| Date | Tracks | Avg Trn | Avg Imp | Peak Trn | Hours |
+|------|--------|---------|---------|----------|-------|
+| **4/13/69** | 11 | **58.5** | 30.4 | **77.5** | 2.0 |
+| 10/15/83 | 18 | 57.1 | 20.4 | 67.2 | 2.4 |
+| 5/30/69 | 9 | 57.1 | 30.6 | 71.8 | 1.5 |
+| **9/20/91** | 17 | **56.6** | **28.4** | 70.8 | 2.7 |
+| 11/10/85 | 19 | 56.5 | 23.1 | 63.6 | 2.3 |
+| 8/30/85 | 16 | 56.4 | 18.9 | 68.4 | 2.0 |
+| 12/12/90 | 13 | 55.9 | 26.5 | 66.2 | 2.0 |
+| 3/21/86 | 16 | 55.5 | 24.7 | 71.1 | 2.1 |
+| 10/5/84 | 19 | 55.4 | 25.9 | 68.2 | 2.8 |
+| 6/19/68 | 9 | 55.3 | 32.3 | 71.9 | 1.8 |
+
+**4/13/69** — the Ark, Boston — tops the list with a peak transcendence of 77.5 and the highest combined avg_trn + avg_imp. The 1969 shows are genuinely the most consistently excellent in the library.
+
+**9/20/91** is the highest-ranked show from the final era — confirming the late-career renaissance (avg_trn 56.6, avg_imp 28.4).
+
+Notable: no 1977 shows in the top 10 despite Cornell '77 being the canonical "best show." This library may not include Cornell, or the 1977 sound (polished, melodic, less raw) may score lower on transcendence despite being beloved for other reasons (beauty, precision, warmth).
+
+### Top 10 Phish Shows
+
+| Date | Tracks | Avg Trn | Avg Imp | Peak Trn | Hours |
+|------|--------|---------|---------|----------|-------|
+| **9/2/17** | 19 | **59.6** | **27.1** | 66.2 | 3.2 |
+| 7/20/14 | 19 | 58.6 | 23.5 | 69.8 | 2.9 |
+| **7/24/15** | 15 | **58.5** | **29.0** | 67.8 | 2.6 |
+| 8/12/15 | 16 | 58.4 | 28.9 | 67.9 | 2.8 |
+| **7/22/18** | 16 | 57.6 | 28.0 | 68.1 | 2.8 |
+| 7/25/15 | 18 | 57.6 | 25.7 | 66.1 | 2.8 |
+| **12/30/97** | 21 | 56.6 | 25.0 | **71.0** | 3.4 |
+| 8/8/15 | 19 | 56.5 | 22.6 | 67.9 | 2.8 |
+| 1/16/16 | 19 | 56.4 | 21.8 | 62.6 | 2.8 |
+| 11/14/97 | 17 | 56.2 | 29.7 | **71.1** | 3.1 |
+
+**2015 dominates** — 8 of the top 20 Phish shows are from 2015. This isn't a sampling artifact (567 tracks from 2015 vs 112 from 1997). Summer 2015 was genuinely the peak of 3.0 Phish by these metrics.
+
+**12/30/97** has the highest single-track peak (71.0), but **9/2/17** (Dick's Night 3) has the highest average transcendence across an entire show. The 1997 shows achieve higher peaks but with more variability; the 3.0 shows sustain quality more consistently.
+
+---
+
 *Generated by [setbreak](https://github.com/lexicone42/setbreak) — a Rust CLI for algorithmic analysis of jam-band music libraries. 10 jam scores computed from 189 DSP audio features per track.*
