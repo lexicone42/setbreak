@@ -126,6 +126,10 @@ enum Commands {
         /// Minimum duration in minutes
         #[arg(long)]
         min_duration: Option<f64>,
+
+        /// Include studio and non-live recordings (default: live only)
+        #[arg(long)]
+        all_types: bool,
     },
 
     /// Compare versions of a song across shows
@@ -140,6 +144,10 @@ enum Commands {
         /// Number of results
         #[arg(short = 'n', long, default_value = "20")]
         limit: usize,
+
+        /// Include studio and non-live recordings (default: live only)
+        #[arg(long)]
+        all_types: bool,
     },
 
     /// View a show's setlist with scores
@@ -220,6 +228,12 @@ enum Commands {
 
     /// Flag tracks with bad audio quality (DTS bitstreams, corrupt files)
     QualityCheck,
+
+    /// Run a raw SQL query against the database and display results
+    Sql {
+        /// SQL query to execute
+        query: String,
+    },
 
     /// Show library statistics
     Stats,
@@ -346,10 +360,10 @@ fn main() -> Result<()> {
             }
         }
 
-        Commands::Top { score, limit, song, min_duration } => {
+        Commands::Top { score, limit, song, min_duration, all_types } => {
             let min_dur_secs = min_duration.map(|m| m * 60.0);
             let results = db.query_top(
-                score.column(), limit, song.as_deref(), min_dur_secs,
+                score.column(), limit, song.as_deref(), min_dur_secs, !all_types,
             ).context("Query failed")?;
 
             if results.is_empty() {
@@ -362,8 +376,8 @@ fn main() -> Result<()> {
             print_score_table(&results, Some(&score));
         }
 
-        Commands::Compare { song, sort, limit } => {
-            let results = db.query_compare(&song, sort.column(), limit)
+        Commands::Compare { song, sort, limit, all_types } => {
+            let results = db.query_compare(&song, sort.column(), limit, !all_types)
                 .context("Query failed")?;
 
             if results.is_empty() {
@@ -593,6 +607,77 @@ fn main() -> Result<()> {
                 "Quality check complete: {} tracks — {} ok, {} suspect, {} garbage",
                 total, ok, suspect, garbage
             );
+        }
+
+        Commands::Sql { query } => {
+            let mut stmt = db.conn.prepare(&query)
+                .context("SQL prepare failed")?;
+            let col_count = stmt.column_count();
+            let col_names: Vec<String> = (0..col_count)
+                .map(|i| stmt.column_name(i).unwrap_or("?").to_string())
+                .collect();
+
+            // Compute column widths from data
+            let mut rows_data: Vec<Vec<String>> = Vec::new();
+            let mut widths: Vec<usize> = col_names.iter().map(|n| n.len()).collect();
+
+            let mut rows = stmt.query(rusqlite::params![])
+                .context("SQL query failed")?;
+            while let Some(row) = rows.next()? {
+                let mut row_strs = Vec::with_capacity(col_count);
+                for i in 0..col_count {
+                    let val: String = match row.get_ref(i)? {
+                        rusqlite::types::ValueRef::Null => "NULL".to_string(),
+                        rusqlite::types::ValueRef::Integer(n) => n.to_string(),
+                        rusqlite::types::ValueRef::Real(f) => {
+                            if f.fract() == 0.0 && f.abs() < 1e15 {
+                                format!("{:.1}", f)
+                            } else {
+                                format!("{:.4}", f)
+                            }
+                        }
+                        rusqlite::types::ValueRef::Text(s) => {
+                            String::from_utf8_lossy(s).to_string()
+                        }
+                        rusqlite::types::ValueRef::Blob(b) => format!("<blob {}B>", b.len()),
+                    };
+                    if val.len() > widths[i] {
+                        widths[i] = val.len();
+                    }
+                    row_strs.push(val);
+                }
+                rows_data.push(row_strs);
+            }
+
+            // Cap column widths at 40 for readability
+            for w in widths.iter_mut() {
+                if *w > 40 { *w = 40; }
+            }
+
+            // Print header
+            for (i, name) in col_names.iter().enumerate() {
+                if i > 0 { print!("  "); }
+                print!("{:>width$}", name, width = widths[i]);
+            }
+            println!();
+            let total_width: usize = widths.iter().sum::<usize>() + (col_count - 1) * 2;
+            println!("{}", "-".repeat(total_width));
+
+            // Print rows
+            for row_strs in &rows_data {
+                for (i, val) in row_strs.iter().enumerate() {
+                    if i > 0 { print!("  "); }
+                    let display = if val.len() > widths[i] {
+                        format!("{}...", &val[..widths[i] - 3])
+                    } else {
+                        val.clone()
+                    };
+                    print!("{:>width$}", display, width = widths[i]);
+                }
+                println!();
+            }
+            println!();
+            println!("{} rows", rows_data.len());
         }
 
         Commands::Schema { grep, category, scores } => {

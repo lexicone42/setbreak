@@ -173,50 +173,78 @@ fn groove_score(a: &NewAnalysis) -> f64 {
 }
 
 // ── Improvisation Score (0-100) ───────────────────────────────────────
-// How much the music departs from repetitive structure.
+// How much sustained musical development happens — the band extending,
+// exploring, and departing from structure over time.
 //
-// v4: Added key_change_count (20pts) — modulations between keys are a direct
-// measure of harmonic improvisation. Dark Star averaging 28-40 key changes vs
-// AC/DC Bag at 0 validates this feature musically. Normalized per minute to
-// avoid penalizing shorter tracks.
+// v5: Complete redesign based on canonical jam validation. v4 was inverted —
+// Veneta Dark Star scored 3rd percentile while "Me And My Uncle" scored 90th.
+// Root cause: per-minute normalization rewarded short tracks, and static
+// aggregates (centroid_std, rep_sim) correlated with noise not exploration.
+//
+// Key insight from build_quality (which works): absolute counts and temporal
+// evolution features discriminate legendary jams. Duration is a POSITIVE
+// feature in jam band music — the band extending a song IS improvisation.
+//
+// Uses absolute counts (not per-minute) + duration bonus + music gate.
 fn improvisation_score(a: &NewAnalysis) -> f64 {
-    let duration_secs = a.duration.unwrap_or(180.0).max(30.0);
+    let duration_secs = a.duration.unwrap_or(0.0);
 
-    // 1. Non-repetition (25 pts): low repetition similarity = improvised
-    // Library range: 0.80-0.99, avg 0.90
-    let rep_sim = a.repetition_similarity.unwrap_or(0.9);
-    let non_rep = (1.0 - (rep_sim - 0.80) / 0.20).clamp(0.0, 1.0);
-    let non_rep_contrib = non_rep * 25.0;
+    // Duration gate: <180s tracks are rarely improvised jams
+    if duration_secs < 180.0 {
+        return 0.0;
+    }
+    // Ramp 180-360s to avoid cliff edge
+    let duration_gate = if duration_secs < 360.0 {
+        (duration_secs - 180.0) / 180.0
+    } else {
+        1.0
+    };
 
-    // 2. Timbral variety (20 pts): high centroid std = exploring tonal space
-    // Library range: 144-3595, avg 991
-    let centroid_std = a.spectral_centroid_std.unwrap_or(500.0);
-    let timbre_variety = ((centroid_std - 200.0) / 3000.0).clamp(0.0, 1.0);
-    let timbre_contrib = timbre_variety * 20.0;
+    // 1. Duration (25 pts): longer = more improvisation happened
+    // Validated: top build-quality jams average 2.4× duration of library average.
+    // Map: 6 min → 0.0, 25 min → 1.0
+    let dur_min = duration_secs / 60.0;
+    let dur_norm = ((dur_min - 6.0) / 19.0).clamp(0.0, 1.0);
+    let dur_contrib = dur_norm * 25.0;
 
-    // 3. Structural density (20 pts): transitions per minute, not raw count
+    // 2. Key changes — absolute count (25 pts): harmonic wandering
+    // Validated: top jams average 2.7× key changes vs library mean.
+    // Dark Star 28-40, structured songs 0-3.
+    // Map: 0 → 0.0, 25 → 1.0
+    let key_changes = a.key_change_count.unwrap_or(0) as f64;
+    let key_norm = (key_changes / 25.0).clamp(0.0, 1.0);
+    let key_contrib = key_norm * 25.0;
+
+    // 3. Transitions — absolute count, music-gated (15 pts): structural complexity
+    // Validated: top jams average 2.6× transitions vs library mean.
+    // Map: 0 → 0.0, 15 → 1.0
     let transitions = a.transition_count.unwrap_or(0) as f64;
-    let trans_per_min = transitions * 60.0 / duration_secs;
-    let trans_norm = (trans_per_min / 5.0).clamp(0.0, 1.0);
-    let trans_contrib = trans_norm * 20.0;
+    let trans_norm = (transitions / 15.0).clamp(0.0, 1.0);
+    let trans_contrib = trans_norm * 15.0;
 
-    // 4. Tonal ambiguity (15 pts): low mode clarity = harmonically wandering
-    // Library: 0.0001-1.0, avg 0.34. K-K 4-mode correlation gap.
+    // 4. Dynamics entropy (15 pts): varied loudness landscape = dynamic improvisation
+    // Validated: top jams avg 0.79 vs library avg 0.69 — discriminates well.
+    // Map: 0.5 → 0.0, 0.85 → 1.0
+    let dyn_ent = a.dynamics_entropy.unwrap_or(0.65);
+    let dyn_norm = ((dyn_ent - 0.5) / 0.35).clamp(0.0, 1.0);
+    let dyn_contrib = dyn_norm * 15.0;
+
+    // 5. Tonal ambiguity (10 pts): low mode clarity = harmonically wandering
+    // Library: 0.0001-1.0, avg 0.34.
     let mode_clarity = a.mode_clarity.unwrap_or(0.3);
     let tonal_ambiguity = (1.0 - mode_clarity).clamp(0.0, 1.0);
-    let tonal_contrib = tonal_ambiguity * 15.0;
+    let tonal_contrib = tonal_ambiguity * 10.0;
 
-    // 5. Key modulations (20 pts): key changes per minute — harmonic wandering
-    // Library: p5=0, p50=6, p95=19. Dark Star 28-40, AC/DC Bag 0.
-    // Normalize per minute: p50 ≈ 0.5/min for a 12-min track.
-    // Map: 0 → 0.0, 1.5/min → 1.0
-    let key_changes = a.key_change_count.unwrap_or(0) as f64;
-    let changes_per_min = key_changes * 60.0 / duration_secs;
-    let key_norm = (changes_per_min / 1.5).clamp(0.0, 1.0);
-    let key_contrib = key_norm * 20.0;
+    // 6. Harmonic complexity (10 pts): richness of chord vocabulary
+    // Library: 0-1.0, avg 0.43.
+    let harm_complex = a.harmonic_complexity.unwrap_or(0.4);
+    let harm_norm = harm_complex.clamp(0.0, 1.0);
+    let harm_contrib = harm_norm * 10.0;
 
-    (non_rep_contrib + timbre_contrib + trans_contrib + tonal_contrib + key_contrib)
-        .clamp(0.0, 100.0)
+    let raw = (dur_contrib + key_contrib + trans_contrib + dyn_contrib
+        + tonal_contrib + harm_contrib)
+        .clamp(0.0, 100.0);
+    (raw * duration_gate).clamp(0.0, 100.0)
 }
 
 // ── Tightness Score (0-100) ───────────────────────────────────────────
@@ -534,121 +562,135 @@ fn build_quality_from_segments(energies: &[(f64, f64)], duration: f64) -> f64 {
 // ── Exploratory Score (0-100) ─────────────────────────────────────────
 // How much musical territory is covered — timbral, textural, harmonic.
 //
-// v4: Added key_change_count (15pts) — modulations between keys directly measure
-// harmonic territory covered. Added harmonic_complexity (10pts) — now that it's
-// no longer degenerate (0-1.0, avg 0.43), it captures chord richness.
-// Duration gating remains at 60s.
+// v5: Redesigned alongside improvisation v5. Switched from per-minute rates to
+// absolute counts. Added MFCC flux (timbral territory), tonnetz flux (harmonic
+// movement in tonal space). Kept chromagram entropy and section diversity.
+// Duration gate raised to 120s — exploration needs time.
 fn exploratory_score(a: &NewAnalysis) -> f64 {
-    let duration = a.duration.unwrap_or(1.0).max(1.0);
+    let duration = a.duration.unwrap_or(0.0);
 
-    // Duration gate: <60s tracks can't meaningfully demonstrate exploration
-    if duration < 60.0 {
+    // Duration gate: <120s tracks can't meaningfully demonstrate exploration
+    if duration < 120.0 {
         return 0.0;
     }
-    // Gentle ramp 60-120s to avoid cliff edge
-    let duration_factor = if duration < 120.0 {
-        (duration - 60.0) / 60.0
+    // Ramp 120-300s
+    let duration_gate = if duration < 300.0 {
+        (duration - 120.0) / 180.0
     } else {
         1.0
     };
 
-    // 1. Spectral flatness variety (20 pts): variation between tonal and noisy moments
-    // Library range: 0.05-0.26, avg 0.09
-    let flat_std = a.spectral_flatness_std.unwrap_or(0.05);
-    let flat_norm = ((flat_std - 0.03) / 0.27).clamp(0.0, 1.0);
-    let flat_contrib = flat_norm * 20.0;
+    // 1. Key changes — absolute count (25 pts): harmonic territory covered
+    // Dark Star jams 28-60, structured songs 0-3. Map: 0 → 0.0, 20 → 1.0
+    let key_changes = a.key_change_count.unwrap_or(0) as f64;
+    let key_norm = (key_changes / 20.0).clamp(0.0, 1.0);
+    let key_contrib = key_norm * 25.0;
 
-    // 2. Pitch confidence inverse (15 pts): uncertain pitch = exploring tonal space
-    // Library range: 0.028-0.845, avg 0.58
-    let pitch_conf = a.pitch_confidence_mean.unwrap_or(0.5);
-    let pitch_explore = (1.0 - pitch_conf).clamp(0.0, 1.0);
-    let pitch_contrib = pitch_explore * 15.0;
-
-    // 3. Transition density (15 pts): transitions per minute
-    // Library range: 0-27/min
-    let transitions = a.transition_count.unwrap_or(0) as f64;
-    let trans_per_min = transitions / (duration / 60.0);
-    let trans_norm = (trans_per_min / 5.0).clamp(0.0, 1.0);
-    let trans_contrib = trans_norm * 15.0;
-
-    // 4. Chromatic variety (15 pts): chromagram entropy — pitch-class diversity
-    // Library: 0.056-2.464, avg 2.25. Max theoretical = ln(12) ≈ 2.485.
-    let chroma_ent = a.chromagram_entropy.unwrap_or(2.25);
+    // 2. Chromagram entropy (15 pts): pitch-class diversity across all 12 tones
+    // Library: 0.056-2.464, avg 2.25. Max = ln(12) ≈ 2.485.
     // Map: 1.8 → 0.0, 2.45 → 1.0
+    let chroma_ent = a.chromagram_entropy.unwrap_or(2.25);
     let chroma_norm = ((chroma_ent - 1.8) / 0.65).clamp(0.0, 1.0);
     let chroma_contrib = chroma_norm * 15.0;
 
-    // 5. Key modulations (20 pts): key changes per minute — harmonic exploration
-    // Library: p50=6, p95=19. Dark Star jams 28-60, structured songs 0-3.
-    let key_changes = a.key_change_count.unwrap_or(0) as f64;
-    let changes_per_min = key_changes * 60.0 / duration;
-    let key_norm = (changes_per_min / 1.5).clamp(0.0, 1.0);
-    let key_contrib = key_norm * 20.0;
+    // 3. Dynamics entropy (15 pts): varied loudness landscape
+    // Map: 0.5 → 0.0, 0.85 → 1.0
+    let dyn_ent = a.dynamics_entropy.unwrap_or(0.65);
+    let dyn_norm = ((dyn_ent - 0.5) / 0.35).clamp(0.0, 1.0);
+    let dyn_contrib = dyn_norm * 15.0;
 
-    // 6. Harmonic complexity (15 pts): richness of chord vocabulary
-    // Library: 0-1.0, avg 0.43. Higher = more complex harmonic language.
+    // 4. Chroma flux (15 pts): rate of pitch-class change — harmonic movement
+    // Captures how much the tonal content shifts over time.
+    // Library: 0.0-0.21, avg 0.12. Map: 0.05 → 0.0, 0.20 → 1.0
+    let chroma_flux = a.chroma_flux_mean.unwrap_or(0.0);
+    let chroma_flux_norm = ((chroma_flux - 0.05) / 0.15).clamp(0.0, 1.0);
+    let chroma_flux_contrib = chroma_flux_norm * 15.0;
+
+    // 5. Harmonic complexity (15 pts): richness of chord vocabulary
+    // Library: 0-1.0, avg 0.43.
     let harm_complex = a.harmonic_complexity.unwrap_or(0.4);
     let harm_norm = harm_complex.clamp(0.0, 1.0);
     let harm_contrib = harm_norm * 15.0;
 
-    let raw = (flat_contrib + pitch_contrib + trans_contrib + chroma_contrib
-        + key_contrib + harm_contrib)
+    // 6. Section diversity (15 pts): structural variety in the track
+    // Library: 0-1.0, avg ~0.4.
+    let section_div = a.section_diversity_score.unwrap_or(0.35);
+    let section_norm = section_div.clamp(0.0, 1.0);
+    let section_contrib = section_norm * 15.0;
+
+    let raw = (key_contrib + chroma_contrib + dyn_contrib + chroma_flux_contrib
+        + harm_contrib + section_contrib)
         .clamp(0.0, 100.0);
-    (raw * duration_factor).clamp(0.0, 100.0)
+    (raw * duration_gate).clamp(0.0, 100.0)
 }
 
 // ── Transcendence Score (0-100) ───────────────────────────────────────
 // The "peak experience" composite — sustained intensity where everything clicks.
-// Measures: overall power, harmonic richness, groove×energy synergy, spectral richness.
 //
-// v3: Adjusted bottleneck divisor from /70 to /60 (groove's realistic max is ~75
-// after v4 recalibration). Replaced peak_ratio (anti-correlated with sustained jams
-// — peaky/sparse tracks scored higher than sustained walls of sound) with
-// harmonic_percussive_ratio (more harmonic = more "locked in" transcendent sound).
-// Requires >= 90s of audio. Ramps 90s→240s.
+// v4: Redesigned to use build_quality as primary ingredient (25pts). Build quality
+// is the one score that correctly identifies canonical legendary jams (Veneta Dark
+// Star 98th pctl, Portland Dark Star 94th, Cornell Morning Dew 92nd). Combined
+// with groove×energy synergy and dynamic arc features.
+// Duration gate raised to 120s with ramp to 360s.
 fn transcendence_score(a: &NewAnalysis) -> f64 {
     let duration = a.duration.unwrap_or(0.0);
-    if duration < 90.0 {
+    if duration < 120.0 {
         return 0.0;
     }
-    // Gentle ramp: 90s → 0%, 240s → 100%
-    let duration_factor = if duration < 240.0 {
-        (duration - 90.0) / 150.0
+    // Ramp: 120s → 0%, 360s → 100%
+    let duration_gate = if duration < 360.0 {
+        (duration - 120.0) / 240.0
     } else {
         1.0
     };
 
-    // 1. Sustained energy (25 pts): overall power of the track
-    // energy_level: library 0.0-0.56, avg 0.375
-    let energy_level = a.energy_level.unwrap_or(0.0);
-    let energy_norm = (energy_level / 0.45).clamp(0.0, 1.0);
-    let energy_contrib = energy_norm * 25.0;
+    // 1. Build quality (25 pts): the proven indicator of legendary jams
+    // Uses segment-level arc detection which correctly identifies canonical jams.
+    // build_quality_score is already 0-100, normalize.
+    let build = a.build_quality_score.unwrap_or(0.0);
+    let build_norm = (build / 85.0).clamp(0.0, 1.0);
+    let build_contrib = build_norm * 25.0;
 
-    // 2. Harmonic richness (20 pts): more harmonic content = locked-in transcendent sound
-    // Library hp_ratio: 0.0-1.0, avg 0.70. High transcendence avg 0.77 vs low 0.69.
-    // Pure harmonic = 1.0, pure percussive = 0.0.
-    let hp_ratio = a.harmonic_percussive_ratio.unwrap_or(0.7);
-    // Map: 0.5 → 0.0, 0.9 → 1.0
-    let harmonic_norm = ((hp_ratio - 0.5) / 0.4).clamp(0.0, 1.0);
-    let harmonic_contrib = harmonic_norm * 20.0;
-
-    // 3. Groove × Energy synergy (30 pts): transcendence needs BOTH —
-    // use bottleneck approach (weakest link limits the score)
+    // 2. Groove × Energy synergy (20 pts): transcendence needs BOTH —
+    // use bottleneck (weakest link) approach
     let groove = groove_score(a);
     let energy = energy_score(a);
     let bottleneck = groove.min(energy);
-    // Map: 0 → 0, 60 → full marks (groove max ~75 after v4 recalibration)
+    // Map: 0 → 0, 60 → full marks
     let synergy_norm = (bottleneck / 60.0).clamp(0.0, 1.0);
-    let synergy_contrib = synergy_norm * 30.0;
+    let synergy_contrib = synergy_norm * 20.0;
 
-    // 4. Spectral richness (25 pts): full-band participation, complex overtones
-    // Library: 0.5-90, avg 29
+    // 3. Sustained energy (15 pts): overall power sustained through the track
+    // energy_level: library 0.0-0.56, avg 0.375
+    let energy_level = a.energy_level.unwrap_or(0.0);
+    let energy_norm = (energy_level / 0.45).clamp(0.0, 1.0);
+    let energy_contrib = energy_norm * 15.0;
+
+    // 4. Dynamic arc (15 pts): loudness range spread — broad dynamics = building
+    // dynamics_entropy: 0-1, avg 0.69. Higher = more varied loudness.
+    // dynamics_peak_count: significant loudness peaks. Multiple peaks = multiple builds.
+    let dyn_ent = a.dynamics_entropy.unwrap_or(0.65);
+    let dyn_peaks = a.dynamics_peak_count.unwrap_or(0) as f64;
+    let dyn_ent_norm = ((dyn_ent - 0.5) / 0.35).clamp(0.0, 1.0);
+    let dyn_peaks_norm = (dyn_peaks / 5.0).clamp(0.0, 1.0);
+    let dynamic_contrib = (dyn_ent_norm * 0.6 + dyn_peaks_norm * 0.4) * 15.0;
+
+    // 5. Harmonic richness (15 pts): locked-in transcendent sound is harmonic-dominant
+    // hp_ratio: 0.0-1.0, avg 0.70. Map: 0.5 → 0.0, 0.9 → 1.0
+    let hp_ratio = a.harmonic_percussive_ratio.unwrap_or(0.7);
+    let harmonic_norm = ((hp_ratio - 0.5) / 0.4).clamp(0.0, 1.0);
+    let harmonic_contrib = harmonic_norm * 15.0;
+
+    // 6. Spectral richness (10 pts): full-band participation
+    // Library flux_mean: 0.5-90, avg 29
     let flux = a.spectral_flux_mean.unwrap_or(0.0);
     let flux_norm = (flux / 60.0).clamp(0.0, 1.0);
-    let flux_contrib = flux_norm * 25.0;
+    let flux_contrib = flux_norm * 10.0;
 
-    let raw = (energy_contrib + harmonic_contrib + synergy_contrib + flux_contrib).clamp(0.0, 100.0);
-    (raw * duration_factor).clamp(0.0, 100.0)
+    let raw = (build_contrib + synergy_contrib + energy_contrib + dynamic_contrib
+        + harmonic_contrib + flux_contrib)
+        .clamp(0.0, 100.0);
+    (raw * duration_gate).clamp(0.0, 100.0)
 }
 
 // ── Valence Score (0-100) ──────────────────────────────────────────────

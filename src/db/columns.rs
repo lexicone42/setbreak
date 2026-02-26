@@ -43,6 +43,9 @@ pub const TRACK_SCORE_SELECT: &str =
 /// Common WHERE clause to exclude garbage-quality tracks.
 pub const NOT_GARBAGE: &str = "COALESCE(t.data_quality, 'ok') != 'garbage'";
 
+/// WHERE clause to show only live recordings (excludes studio, live_album, unknown).
+pub const LIVE_ONLY: &str = "COALESCE(t.recording_type, 'unknown') = 'live'";
+
 /// Map a rusqlite row (from TRACK_SCORE_SELECT) to a TrackScore.
 /// Expects columns 0..14 in the order produced by TRACK_SCORE_SELECT.
 pub fn map_track_score(row: &rusqlite::Row) -> rusqlite::Result<TrackScore> {

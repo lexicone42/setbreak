@@ -1,4 +1,4 @@
-use super::columns::{map_track_score, NOT_GARBAGE, SCORE_COLUMNS, TRACK_SCORE_SELECT};
+use super::columns::{map_track_score, LIVE_ONLY, NOT_GARBAGE, SCORE_COLUMNS, TRACK_SCORE_SELECT};
 use super::models::{
     ArchiveShow, CalibrationRow, ChordEvent, LibraryStats, NewAnalysis, NewTrack, SegmentRecord,
     TensionPointRecord, Track, TrackScore, TransitionRecord,
@@ -808,6 +808,7 @@ impl Database {
         limit: usize,
         song_filter: Option<&str>,
         min_duration_secs: Option<f64>,
+        live_only: bool,
     ) -> Result<Vec<TrackScore>> {
         if !SCORE_COLUMNS.contains(&score_column) {
             return Ok(vec![]);
@@ -820,6 +821,9 @@ impl Database {
              WHERE a.{score_column} IS NOT NULL
                AND {NOT_GARBAGE}"
         );
+        if live_only {
+            sql += &format!(" AND {LIVE_ONLY}");
+        }
 
         let mut params_vec: Vec<Box<dyn rusqlite::types::ToSql>> = vec![];
 
@@ -853,6 +857,7 @@ impl Database {
         song: &str,
         sort_by: &str,
         limit: usize,
+        live_only: bool,
     ) -> Result<Vec<TrackScore>> {
         let order_col = if SCORE_COLUMNS.contains(&sort_by) || sort_by == "duration" {
             sort_by
@@ -860,12 +865,14 @@ impl Database {
             "duration"
         };
 
+        let live_filter = if live_only { format!("AND {LIVE_ONLY}") } else { String::new() };
         let sql = format!(
             "SELECT {TRACK_SCORE_SELECT}
              FROM analysis_results a
              JOIN tracks t ON t.id = a.track_id
              WHERE (t.parsed_title LIKE ?1 OR t.title LIKE ?1)
                AND {NOT_GARBAGE}
+               {live_filter}
              ORDER BY a.{order_col} DESC
              LIMIT ?2"
         );
