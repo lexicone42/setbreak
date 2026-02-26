@@ -624,7 +624,7 @@ fn main() -> Result<()> {
                 println!("Download with: setbreak download --band {} <DATE>", band);
                 let registry = setbreak::bands::registry();
                 if registry.is_sbd_stream_only(&band) {
-                    println!("  (SBD sources are stream-only; download will auto-select matrix/audience tapes)");
+                    println!("  (SBD/matrix sources are stream-only; download will auto-select audience tapes)");
                 }
             }
         }
@@ -649,7 +649,7 @@ fn main() -> Result<()> {
                 None => {
                     if sbd_restricted {
                         println!("No downloadable recordings found for {} on {}.", band, date);
-                        println!("(SBD sources are stream-only for this band; no audience/matrix tapes available)");
+                        println!("(SBD/matrix sources are stream-only for this band; no audience tapes available)");
                     } else {
                         println!("No recordings found for {} on {}.", band, date);
                         println!("Try running `setbreak discover --band {}` first to populate the cache.", band);
@@ -660,7 +660,7 @@ fn main() -> Result<()> {
                     let fmt = setbreak::discovery::format_label(format_q);
 
                     if skipped_sbd {
-                        println!("Note: Skipping SBD sources (stream-only for this band)");
+                        println!("Note: Skipping SBD/matrix sources (stream-only for this band)");
                     }
                     println!("Best source: {} ({}/{})", identifier, src, fmt);
 

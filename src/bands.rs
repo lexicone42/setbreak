@@ -34,8 +34,8 @@ pub struct BandEntry {
     /// Prefix used in search fallback → collection/creator mapping.
     /// e.g., "gd" → "GratefulDead" for collection-based search
     pub search_fallback_prefix: Option<(String, String)>,
-    /// SBD recordings are stream-only on archive.org (cannot be downloaded).
-    /// When true, downloads will prefer matrix/audience sources.
+    /// SBD and matrix recordings are stream-only on archive.org (cannot be downloaded).
+    /// When true, downloads will only use audience (aud) or unclassified sources.
     pub sbd_stream_only: bool,
 }
 

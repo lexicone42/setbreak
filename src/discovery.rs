@@ -386,11 +386,13 @@ pub fn pick_best_source(
 
     let mut skipped_sbd = false;
     let candidates: Vec<_> = if sbd_stream_only {
-        let (sbd, non_sbd): (Vec<_>, Vec<_>) = shows.into_iter().partition(|s| s.source_quality == 3);
-        if !sbd.is_empty() && !non_sbd.is_empty() {
+        // Both SBD (3) and matrix (2) are stream-only for restricted bands
+        let (restricted, downloadable): (Vec<_>, Vec<_>) = shows.into_iter()
+            .partition(|s| s.source_quality >= 2);
+        if !restricted.is_empty() && !downloadable.is_empty() {
             skipped_sbd = true;
         }
-        non_sbd
+        downloadable
     } else {
         shows
     };
