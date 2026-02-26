@@ -223,6 +223,21 @@ enum Commands {
 
     /// Show library statistics
     Stats,
+
+    /// Show analysis_results column inventory (names, types, categories)
+    Schema {
+        /// Filter columns by substring match (case-insensitive)
+        #[arg(long)]
+        grep: Option<String>,
+
+        /// Show only a specific category
+        #[arg(long)]
+        category: Option<String>,
+
+        /// Show only jam score columns
+        #[arg(long)]
+        scores: bool,
+    },
 }
 
 fn main() -> Result<()> {
@@ -578,6 +593,49 @@ fn main() -> Result<()> {
                 "Quality check complete: {} tracks — {} ok, {} suspect, {} garbage",
                 total, ok, suspect, garbage
             );
+        }
+
+        Commands::Schema { grep, category, scores } => {
+            use setbreak::db::columns::ANALYSIS_SCHEMA;
+
+            let columns: Vec<_> = ANALYSIS_SCHEMA.iter().filter(|c| {
+                if scores {
+                    return c.category == "Score";
+                }
+                if let Some(ref pat) = grep {
+                    let pat_lower = pat.to_lowercase();
+                    return c.name.to_lowercase().contains(&pat_lower)
+                        || c.category.to_lowercase().contains(&pat_lower)
+                        || c.description.to_lowercase().contains(&pat_lower);
+                }
+                if let Some(ref cat) = category {
+                    let cat_lower = cat.to_lowercase();
+                    return c.category.to_lowercase().contains(&cat_lower);
+                }
+                true
+            }).collect();
+
+            if columns.is_empty() {
+                println!("No matching columns found.");
+            } else {
+                let mut current_category = "";
+                for c in &columns {
+                    if c.category != current_category {
+                        if !current_category.is_empty() {
+                            println!();
+                        }
+                        println!("  {}", c.category);
+                        println!("  {}", "-".repeat(c.category.len()));
+                        current_category = c.category;
+                    }
+                    println!(
+                        "  {:<40} {:<4}  {}",
+                        c.name, c.sql_type, c.description
+                    );
+                }
+                println!();
+                println!("{} columns", columns.len());
+            }
         }
 
         Commands::Stats => {

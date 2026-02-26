@@ -1,3 +1,4 @@
+use super::columns::{map_track_score, NOT_GARBAGE, SCORE_COLUMNS, TRACK_SCORE_SELECT};
 use super::models::{
     ArchiveShow, CalibrationRow, ChordEvent, LibraryStats, NewAnalysis, NewTrack, SegmentRecord,
     TensionPointRecord, Track, TrackScore, TransitionRecord,
@@ -808,31 +809,16 @@ impl Database {
         song_filter: Option<&str>,
         min_duration_secs: Option<f64>,
     ) -> Result<Vec<TrackScore>> {
-        // Validate score column to prevent SQL injection
-        let valid_columns = [
-            "energy_score", "intensity_score", "groove_score", "improvisation_score",
-            "tightness_score", "build_quality_score", "exploratory_score",
-            "transcendence_score", "valence_score", "arousal_score",
-        ];
-        if !valid_columns.contains(&score_column) {
+        if !SCORE_COLUMNS.contains(&score_column) {
             return Ok(vec![]);
         }
 
         let mut sql = format!(
-            "SELECT
-                COALESCE(t.parsed_title, t.title, '(untitled)'),
-                COALESCE(t.parsed_date, t.date, '?'),
-                COALESCE(a.duration, 0.0) / 60.0,
-                a.estimated_key, a.tempo_bpm,
-                COALESCE(a.energy_score, 0), COALESCE(a.intensity_score, 0),
-                COALESCE(a.groove_score, 0), COALESCE(a.improvisation_score, 0),
-                COALESCE(a.tightness_score, 0), COALESCE(a.build_quality_score, 0),
-                COALESCE(a.exploratory_score, 0), COALESCE(a.transcendence_score, 0),
-                COALESCE(a.valence_score, 0), COALESCE(a.arousal_score, 0)
+            "SELECT {TRACK_SCORE_SELECT}
              FROM analysis_results a
              JOIN tracks t ON t.id = a.track_id
              WHERE a.{score_column} IS NOT NULL
-               AND COALESCE(t.data_quality, 'ok') != 'garbage'"
+               AND {NOT_GARBAGE}"
         );
 
         let mut params_vec: Vec<Box<dyn rusqlite::types::ToSql>> = vec![];
@@ -856,25 +842,7 @@ impl Database {
             params_vec.iter().map(|p| p.as_ref()).collect();
         let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt
-            .query_map(params_refs.as_slice(), |row| {
-                Ok(TrackScore {
-                    title: row.get(0)?,
-                    date: row.get(1)?,
-                    duration_min: row.get(2)?,
-                    key: row.get(3)?,
-                    tempo: row.get(4)?,
-                    energy: row.get(5)?,
-                    intensity: row.get(6)?,
-                    groove: row.get(7)?,
-                    improvisation: row.get(8)?,
-                    tightness: row.get(9)?,
-                    build_quality: row.get(10)?,
-                    exploratory: row.get(11)?,
-                    transcendence: row.get(12)?,
-                    valence: row.get(13)?,
-                    arousal: row.get(14)?,
-                })
-            })?
+            .query_map(params_refs.as_slice(), |row| map_track_score(row))?
             .collect::<std::result::Result<Vec<_>, _>>()?;
         Ok(rows)
     }
@@ -886,28 +854,18 @@ impl Database {
         sort_by: &str,
         limit: usize,
     ) -> Result<Vec<TrackScore>> {
-        let valid_columns = [
-            "energy_score", "intensity_score", "groove_score", "improvisation_score",
-            "tightness_score", "build_quality_score", "exploratory_score",
-            "transcendence_score", "valence_score", "arousal_score", "duration",
-        ];
-        let order_col = if valid_columns.contains(&sort_by) { sort_by } else { "duration" };
+        let order_col = if SCORE_COLUMNS.contains(&sort_by) || sort_by == "duration" {
+            sort_by
+        } else {
+            "duration"
+        };
 
         let sql = format!(
-            "SELECT
-                COALESCE(t.parsed_title, t.title, '(untitled)'),
-                COALESCE(t.parsed_date, t.date, '?'),
-                COALESCE(a.duration, 0.0) / 60.0,
-                a.estimated_key, a.tempo_bpm,
-                COALESCE(a.energy_score, 0), COALESCE(a.intensity_score, 0),
-                COALESCE(a.groove_score, 0), COALESCE(a.improvisation_score, 0),
-                COALESCE(a.tightness_score, 0), COALESCE(a.build_quality_score, 0),
-                COALESCE(a.exploratory_score, 0), COALESCE(a.transcendence_score, 0),
-                COALESCE(a.valence_score, 0), COALESCE(a.arousal_score, 0)
+            "SELECT {TRACK_SCORE_SELECT}
              FROM analysis_results a
              JOIN tracks t ON t.id = a.track_id
              WHERE (t.parsed_title LIKE ?1 OR t.title LIKE ?1)
-               AND COALESCE(t.data_quality, 'ok') != 'garbage'
+               AND {NOT_GARBAGE}
              ORDER BY a.{order_col} DESC
              LIMIT ?2"
         );
@@ -915,70 +873,26 @@ impl Database {
         let pattern = format!("%{song}%");
         let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt
-            .query_map(params![pattern, limit as i64], |row| {
-                Ok(TrackScore {
-                    title: row.get(0)?,
-                    date: row.get(1)?,
-                    duration_min: row.get(2)?,
-                    key: row.get(3)?,
-                    tempo: row.get(4)?,
-                    energy: row.get(5)?,
-                    intensity: row.get(6)?,
-                    groove: row.get(7)?,
-                    improvisation: row.get(8)?,
-                    tightness: row.get(9)?,
-                    build_quality: row.get(10)?,
-                    exploratory: row.get(11)?,
-                    transcendence: row.get(12)?,
-                    valence: row.get(13)?,
-                    arousal: row.get(14)?,
-                })
-            })?
+            .query_map(params![pattern, limit as i64], |row| map_track_score(row))?
             .collect::<std::result::Result<Vec<_>, _>>()?;
         Ok(rows)
     }
 
     /// Get all analyzed tracks for a given show date.
     pub fn query_show(&self, date: &str) -> Result<Vec<TrackScore>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT
-                COALESCE(t.parsed_title, t.title, '(untitled)'),
-                COALESCE(t.parsed_date, t.date, '?'),
-                COALESCE(a.duration, 0.0) / 60.0,
-                a.estimated_key, a.tempo_bpm,
-                COALESCE(a.energy_score, 0), COALESCE(a.intensity_score, 0),
-                COALESCE(a.groove_score, 0), COALESCE(a.improvisation_score, 0),
-                COALESCE(a.tightness_score, 0), COALESCE(a.build_quality_score, 0),
-                COALESCE(a.exploratory_score, 0), COALESCE(a.transcendence_score, 0),
-                COALESCE(a.valence_score, 0), COALESCE(a.arousal_score, 0)
+        let sql = format!(
+            "SELECT {TRACK_SCORE_SELECT}
              FROM analysis_results a
              JOIN tracks t ON t.id = a.track_id
              WHERE (t.parsed_date = ?1 OR t.date = ?1)
-               AND COALESCE(t.data_quality, 'ok') != 'garbage'
+               AND {NOT_GARBAGE}
              ORDER BY COALESCE(t.parsed_disc, t.disc_number, 1),
                       COALESCE(t.parsed_track, t.track_number, 999)"
-        )?;
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
 
         let rows = stmt
-            .query_map(params![date], |row| {
-                Ok(TrackScore {
-                    title: row.get(0)?,
-                    date: row.get(1)?,
-                    duration_min: row.get(2)?,
-                    key: row.get(3)?,
-                    tempo: row.get(4)?,
-                    energy: row.get(5)?,
-                    intensity: row.get(6)?,
-                    groove: row.get(7)?,
-                    improvisation: row.get(8)?,
-                    tightness: row.get(9)?,
-                    build_quality: row.get(10)?,
-                    exploratory: row.get(11)?,
-                    transcendence: row.get(12)?,
-                    valence: row.get(13)?,
-                    arousal: row.get(14)?,
-                })
-            })?
+            .query_map(params![date], |row| map_track_score(row))?
             .collect::<std::result::Result<Vec<_>, _>>()?;
         Ok(rows)
     }
@@ -1054,49 +968,22 @@ impl Database {
 
     /// Query similar tracks for a given track.
     pub fn query_similar(&self, track_id: i64, limit: usize) -> Result<Vec<(TrackScore, f64)>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT
-                COALESCE(t.parsed_title, t.title, '(untitled)'),
-                COALESCE(t.parsed_date, t.date, '?'),
-                COALESCE(a.duration, 0.0) / 60.0,
-                a.estimated_key, a.tempo_bpm,
-                COALESCE(a.energy_score, 0), COALESCE(a.intensity_score, 0),
-                COALESCE(a.groove_score, 0), COALESCE(a.improvisation_score, 0),
-                COALESCE(a.tightness_score, 0), COALESCE(a.build_quality_score, 0),
-                COALESCE(a.exploratory_score, 0), COALESCE(a.transcendence_score, 0),
-                COALESCE(a.valence_score, 0), COALESCE(a.arousal_score, 0),
+        let sql = format!(
+            "SELECT {TRACK_SCORE_SELECT},
                 s.distance
              FROM track_similarity s
              JOIN tracks t ON t.id = s.similar_track_id
              JOIN analysis_results a ON a.track_id = s.similar_track_id
              WHERE s.track_id = ?1
-               AND COALESCE(t.data_quality, 'ok') != 'garbage'
+               AND {NOT_GARBAGE}
              ORDER BY s.rank
              LIMIT ?2"
-        )?;
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
 
         let rows = stmt
             .query_map(params![track_id, limit as i64], |row| {
-                Ok((
-                    TrackScore {
-                        title: row.get(0)?,
-                        date: row.get(1)?,
-                        duration_min: row.get(2)?,
-                        key: row.get(3)?,
-                        tempo: row.get(4)?,
-                        energy: row.get(5)?,
-                        intensity: row.get(6)?,
-                        groove: row.get(7)?,
-                        improvisation: row.get(8)?,
-                        tightness: row.get(9)?,
-                        build_quality: row.get(10)?,
-                        exploratory: row.get(11)?,
-                        transcendence: row.get(12)?,
-                        valence: row.get(13)?,
-                        arousal: row.get(14)?,
-                    },
-                    row.get::<_, f64>(15)?,
-                ))
+                Ok((map_track_score(row)?, row.get::<_, f64>(15)?))
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
         Ok(rows)
@@ -1104,36 +991,35 @@ impl Database {
 
     /// Find a track ID by song title and optional date.
     pub fn find_track_id(&self, song: &str, date: Option<&str>) -> Result<Option<(i64, String, String)>> {
-        let (sql, pattern) = if let Some(_d) = date {
-            (
+        let pattern = format!("%{song}%");
+        let sql = if date.is_some() {
+            format!(
                 "SELECT t.id, COALESCE(t.parsed_title, t.title, '?'), COALESCE(t.parsed_date, t.date, '?')
                  FROM tracks t
                  JOIN analysis_results a ON a.track_id = t.id
                  WHERE (t.parsed_title LIKE ?1 OR t.title LIKE ?1)
                    AND (t.parsed_date = ?2 OR t.date = ?2)
-                   AND COALESCE(t.data_quality, 'ok') != 'garbage'
-                 LIMIT 1",
-                format!("%{song}%"),
+                   AND {NOT_GARBAGE}
+                 LIMIT 1"
             )
         } else {
-            (
+            format!(
                 "SELECT t.id, COALESCE(t.parsed_title, t.title, '?'), COALESCE(t.parsed_date, t.date, '?')
                  FROM tracks t
                  JOIN analysis_results a ON a.track_id = t.id
                  WHERE (t.parsed_title LIKE ?1 OR t.title LIKE ?1)
-                   AND COALESCE(t.data_quality, 'ok') != 'garbage'
+                   AND {NOT_GARBAGE}
                  ORDER BY a.duration DESC
-                 LIMIT 1",
-                format!("%{song}%"),
+                 LIMIT 1"
             )
         };
 
         let result = if date.is_some() {
-            self.conn.query_row(sql, params![pattern, date.unwrap()], |row| {
+            self.conn.query_row(&sql, params![pattern, date.unwrap()], |row| {
                 Ok((row.get(0)?, row.get(1)?, row.get(2)?))
             })
         } else {
-            self.conn.query_row(sql, params![pattern], |row| {
+            self.conn.query_row(&sql, params![pattern], |row| {
                 Ok((row.get(0)?, row.get(1)?, row.get(2)?))
             })
         };
@@ -1225,17 +1111,18 @@ impl Database {
     /// Get all distinct dates that have tracks with segue markers (for chain detection).
     /// Only returns dates that also have analysis data.
     pub fn get_dates_with_chains(&self) -> Result<Vec<String>> {
-        let mut stmt = self.conn.prepare(
+        let sql = format!(
             "SELECT DISTINCT t.parsed_date
              FROM tracks t
              JOIN analysis_results a ON a.track_id = t.id
              WHERE t.parsed_date IS NOT NULL
-               AND COALESCE(t.data_quality, 'ok') != 'garbage'
+               AND {NOT_GARBAGE}
                AND (t.parsed_title LIKE '%->%'
                     OR t.parsed_title LIKE '%--%>'
                     OR t.parsed_title LIKE '% >')
              ORDER BY t.parsed_date"
-        )?;
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
 
         let dates = stmt
             .query_map([], |row| row.get(0))?
