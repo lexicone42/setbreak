@@ -173,19 +173,15 @@ fn groove_score(a: &NewAnalysis) -> f64 {
 }
 
 // ── Improvisation Score (0-100) ───────────────────────────────────────
-// How much sustained musical development happens — the band extending,
-// exploring, and departing from structure over time.
+// Sustained temporal development — the band building, climaxing, and
+// departing from structure over time. Duration IS improvisation.
 //
-// v5: Complete redesign based on canonical jam validation. v4 was inverted —
-// Veneta Dark Star scored 3rd percentile while "Me And My Uncle" scored 90th.
-// Root cause: per-minute normalization rewarded short tracks, and static
-// aggregates (centroid_std, rep_sim) correlated with noise not exploration.
-//
-// Key insight from build_quality (which works): absolute counts and temporal
-// evolution features discriminate legendary jams. Duration is a POSITIVE
-// feature in jam band music — the band extending a song IS improvisation.
-//
-// Uses absolute counts (not per-minute) + duration bonus + music gate.
+// v6: Separated from exploratory (r=0.88 in v5, both dominated by
+// key_change_count). Improvisation now focuses on TEMPORAL features:
+// duration, energy peaks, dynamics peaks, tempo instability. These are
+// uniquely predictive of imp (r=0.65-0.68) vs exp (r=0.34-0.38).
+// Exploratory uses BREADTH features (chord vocabulary, chromagram entropy,
+// rhythmic unpredictability) with no overlap.
 fn improvisation_score(a: &NewAnalysis) -> f64 {
     let duration_secs = a.duration.unwrap_or(0.0);
 
@@ -201,48 +197,50 @@ fn improvisation_score(a: &NewAnalysis) -> f64 {
     };
 
     // 1. Duration (25 pts): longer = more improvisation happened
-    // Validated: top build-quality jams average 2.4× duration of library average.
+    // r=0.68 for imp, 0.38 for exp — strongest temporal discriminator.
     // Map: 6 min → 0.0, 25 min → 1.0
     let dur_min = duration_secs / 60.0;
     let dur_norm = ((dur_min - 6.0) / 19.0).clamp(0.0, 1.0);
     let dur_contrib = dur_norm * 25.0;
 
-    // 2. Key changes — absolute count (25 pts): harmonic wandering
-    // Validated: top jams average 2.7× key changes vs library mean.
-    // Dark Star 28-40, structured songs 0-3.
+    // 2. Energy peaks (20 pts): multiple climaxes = building and releasing
+    // r=0.65 for imp, 0.35 for exp. Top jams avg 603, low avg 183.
+    // Map: 150 → 0.0, 600 → 1.0
+    let energy_peaks = a.energy_peak_count.unwrap_or(0) as f64;
+    let epk_norm = ((energy_peaks - 150.0) / 450.0).clamp(0.0, 1.0);
+    let epk_contrib = epk_norm * 20.0;
+
+    // 3. Dynamics peaks (15 pts): loudness peaks = musical events/climaxes
+    // r=0.52 for imp, not in top 30 for exp. Top jams avg 1901, low avg 559.
+    // Map: 400 → 0.0, 2000 → 1.0
+    let dyn_peaks = a.dynamics_peak_count.unwrap_or(0) as f64;
+    let dpk_norm = ((dyn_peaks - 400.0) / 1600.0).clamp(0.0, 1.0);
+    let dpk_contrib = dpk_norm * 15.0;
+
+    // 4. Tempo instability (15 pts): departing from steady rhythm = improvising
+    // r=-0.21 for imp, near 0 for exp. Top jams avg 0.48, low avg 0.64.
+    // Map: stability 0.75 → 0.0 pts, 0.35 → 1.0 pts (inverted)
+    let tempo_stab = a.tempo_stability.unwrap_or(0.6);
+    let tempo_inst = ((0.75 - tempo_stab) / 0.40).clamp(0.0, 1.0);
+    let tempo_contrib = tempo_inst * 15.0;
+
+    // 5. Key changes (15 pts): harmonic development over time
+    // r=0.78 for imp — still the single strongest predictor, but reduced
+    // from 25→15 pts to give temporal features more weight.
     // Map: 0 → 0.0, 25 → 1.0
     let key_changes = a.key_change_count.unwrap_or(0) as f64;
     let key_norm = (key_changes / 25.0).clamp(0.0, 1.0);
-    let key_contrib = key_norm * 25.0;
+    let key_contrib = key_norm * 15.0;
 
-    // 3. Transitions — absolute count, music-gated (15 pts): structural complexity
-    // Validated: top jams average 2.6× transitions vs library mean.
-    // Map: 0 → 0.0, 15 → 1.0
-    let transitions = a.transition_count.unwrap_or(0) as f64;
-    let trans_norm = (transitions / 15.0).clamp(0.0, 1.0);
-    let trans_contrib = trans_norm * 15.0;
-
-    // 4. Dynamics entropy (15 pts): varied loudness landscape = dynamic improvisation
-    // Validated: top jams avg 0.79 vs library avg 0.69 — discriminates well.
+    // 6. Dynamics entropy (10 pts): varied loudness landscape
+    // r=0.51 for imp, 0.58 for exp — shared signal, so reduced weight.
     // Map: 0.5 → 0.0, 0.85 → 1.0
     let dyn_ent = a.dynamics_entropy.unwrap_or(0.65);
     let dyn_norm = ((dyn_ent - 0.5) / 0.35).clamp(0.0, 1.0);
-    let dyn_contrib = dyn_norm * 15.0;
+    let dyn_contrib = dyn_norm * 10.0;
 
-    // 5. Tonal ambiguity (10 pts): low mode clarity = harmonically wandering
-    // Library: 0.0001-1.0, avg 0.34.
-    let mode_clarity = a.mode_clarity.unwrap_or(0.3);
-    let tonal_ambiguity = (1.0 - mode_clarity).clamp(0.0, 1.0);
-    let tonal_contrib = tonal_ambiguity * 10.0;
-
-    // 6. Harmonic complexity (10 pts): richness of chord vocabulary
-    // Library: 0-1.0, avg 0.43.
-    let harm_complex = a.harmonic_complexity.unwrap_or(0.4);
-    let harm_norm = harm_complex.clamp(0.0, 1.0);
-    let harm_contrib = harm_norm * 10.0;
-
-    let raw = (dur_contrib + key_contrib + trans_contrib + dyn_contrib
-        + tonal_contrib + harm_contrib)
+    let raw = (dur_contrib + epk_contrib + dpk_contrib + tempo_contrib
+        + key_contrib + dyn_contrib)
         .clamp(0.0, 100.0);
     (raw * duration_gate).clamp(0.0, 100.0)
 }
@@ -560,12 +558,15 @@ fn build_quality_from_segments(energies: &[(f64, f64)], duration: f64) -> f64 {
 }
 
 // ── Exploratory Score (0-100) ─────────────────────────────────────────
-// How much musical territory is covered — timbral, textural, harmonic.
+// How much musical territory is covered — harmonic breadth, timbral variety,
+// rhythmic unpredictability. Measures the BREADTH of the musical landscape.
 //
-// v5: Redesigned alongside improvisation v5. Switched from per-minute rates to
-// absolute counts. Added MFCC flux (timbral territory), tonnetz flux (harmonic
-// movement in tonal space). Kept chromagram entropy and section diversity.
-// Duration gate raised to 120s — exploration needs time.
+// v6: Separated from improvisation (r=0.88 in v5, both dominated by
+// key_change_count and dynamics_entropy). Exploratory now uses BREADTH
+// features: chord vocabulary, chromagram entropy, rhythmic unpredictability,
+// harmonic non-repetition, tonal ambiguity. NO key_change_count (temporal
+// feature → improvisation). NO dynamics_entropy (shared signal).
+// Duration gate only — breadth doesn't inherently require length.
 fn exploratory_score(a: &NewAnalysis) -> f64 {
     let duration = a.duration.unwrap_or(0.0);
 
@@ -580,46 +581,53 @@ fn exploratory_score(a: &NewAnalysis) -> f64 {
         1.0
     };
 
-    // 1. Key changes — absolute count (25 pts): harmonic territory covered
-    // Dark Star jams 28-60, structured songs 0-3. Map: 0 → 0.0, 20 → 1.0
-    let key_changes = a.key_change_count.unwrap_or(0) as f64;
-    let key_norm = (key_changes / 20.0).clamp(0.0, 1.0);
-    let key_contrib = key_norm * 25.0;
+    // 1. Chord count (20 pts): harmonic vocabulary breadth
+    // r=0.67 for exp, 0.49 for imp — strongest breadth discriminator.
+    // Top exp avg 41 distinct chords, low avg 19.
+    // Map: 15 → 0.0, 50 → 1.0
+    let chords = a.chord_count.unwrap_or(0) as f64;
+    let chord_norm = ((chords - 15.0) / 35.0).clamp(0.0, 1.0);
+    let chord_contrib = chord_norm * 20.0;
 
-    // 2. Chromagram entropy (15 pts): pitch-class diversity across all 12 tones
+    // 2. Chromagram entropy (20 pts): pitch-class diversity across all 12 tones
+    // r=0.42 for exp, near 0 for imp — pure breadth signal.
     // Library: 0.056-2.464, avg 2.25. Max = ln(12) ≈ 2.485.
     // Map: 1.8 → 0.0, 2.45 → 1.0
     let chroma_ent = a.chromagram_entropy.unwrap_or(2.25);
     let chroma_norm = ((chroma_ent - 1.8) / 0.65).clamp(0.0, 1.0);
-    let chroma_contrib = chroma_norm * 15.0;
+    let chroma_contrib = chroma_norm * 20.0;
 
-    // 3. Dynamics entropy (15 pts): varied loudness landscape
-    // Map: 0.5 → 0.0, 0.85 → 1.0
-    let dyn_ent = a.dynamics_entropy.unwrap_or(0.65);
-    let dyn_norm = ((dyn_ent - 0.5) / 0.35).clamp(0.0, 1.0);
-    let dyn_contrib = dyn_norm * 15.0;
+    // 3. Onset interval entropy (15 pts): rhythmic unpredictability
+    // r=0.44 for exp, not in top features for imp. Top avg 0.87, low avg 0.76.
+    // Captures variety in note spacing — exploratory jams wander rhythmically.
+    // Map: 0.70 → 0.0, 0.92 → 1.0
+    let oi_ent = a.onset_interval_entropy.unwrap_or(0.80);
+    let oi_norm = ((oi_ent - 0.70) / 0.22).clamp(0.0, 1.0);
+    let oi_contrib = oi_norm * 15.0;
 
-    // 4. Chroma flux (15 pts): rate of pitch-class change — harmonic movement
-    // Captures how much the tonal content shifts over time.
-    // Library: 0.0-0.21, avg 0.12. Map: 0.05 → 0.0, 0.20 → 1.0
-    let chroma_flux = a.chroma_flux_mean.unwrap_or(0.0);
-    let chroma_flux_norm = ((chroma_flux - 0.05) / 0.15).clamp(0.0, 1.0);
-    let chroma_flux_contrib = chroma_flux_norm * 15.0;
+    // 4. Chroma self-similarity bandwidth — INVERTED (15 pts): harmonic non-repetition
+    // r=-0.44 for exp (lower = less repetitive = more exploratory).
+    // Top exp avg 0.19, low avg 0.50. Narrow bandwidth = less self-similar = more exploratory.
+    // Map: 0.50 → 0.0, 0.15 → 1.0 (inverted)
+    let css_bw = a.chroma_self_similarity_bandwidth.unwrap_or(0.35);
+    let css_norm = ((0.50 - css_bw) / 0.35).clamp(0.0, 1.0);
+    let css_contrib = css_norm * 15.0;
 
-    // 5. Harmonic complexity (15 pts): richness of chord vocabulary
-    // Library: 0-1.0, avg 0.43.
-    let harm_complex = a.harmonic_complexity.unwrap_or(0.4);
-    let harm_norm = harm_complex.clamp(0.0, 1.0);
-    let harm_contrib = harm_norm * 15.0;
+    // 5. Key alternatives count (15 pts): tonal ambiguity / polytonality
+    // r=0.34 for exp, near 0 for imp. More plausible keys = more tonally ambiguous.
+    // Library: 0-12+, avg ~4. Map: 2 → 0.0, 10 → 1.0
+    let key_alts = a.key_alternatives_count.unwrap_or(0) as f64;
+    let ka_norm = ((key_alts - 2.0) / 8.0).clamp(0.0, 1.0);
+    let ka_contrib = ka_norm * 15.0;
 
     // 6. Section diversity (15 pts): structural variety in the track
-    // Library: 0-1.0, avg ~0.4.
+    // r=0.38 for exp, present in v5. Library: 0-1.0, avg ~0.4.
     let section_div = a.section_diversity_score.unwrap_or(0.35);
     let section_norm = section_div.clamp(0.0, 1.0);
     let section_contrib = section_norm * 15.0;
 
-    let raw = (key_contrib + chroma_contrib + dyn_contrib + chroma_flux_contrib
-        + harm_contrib + section_contrib)
+    let raw = (chord_contrib + chroma_contrib + oi_contrib + css_contrib
+        + ka_contrib + section_contrib)
         .clamp(0.0, 100.0);
     (raw * duration_gate).clamp(0.0, 100.0)
 }
