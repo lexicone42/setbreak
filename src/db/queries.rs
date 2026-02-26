@@ -1257,6 +1257,34 @@ impl Database {
         Ok(dates)
     }
 
+    /// Get archive shows for a specific date and collection.
+    pub fn get_archive_shows_by_date(
+        &self,
+        collection: &str,
+        date: &str,
+    ) -> Result<Vec<ArchiveShow>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT identifier, collection, date, title, source_quality, format_quality
+             FROM archive_shows
+             WHERE collection = ?1 AND date = ?2
+             ORDER BY source_quality DESC, format_quality DESC"
+        )?;
+
+        let shows = stmt
+            .query_map(params![collection, date], |row| {
+                Ok(ArchiveShow {
+                    identifier: row.get(0)?,
+                    collection: row.get(1)?,
+                    date: row.get(2)?,
+                    title: row.get(3)?,
+                    source_quality: row.get(4)?,
+                    format_quality: row.get(5)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(shows)
+    }
+
     /// Check if a file path already exists and hasn't changed (same size+mtime).
     pub fn track_unchanged(&self, file_path: &str, file_size: i64, file_modified: &str) -> Result<bool> {
         let result: std::result::Result<(i64, String), _> = self.conn.query_row(

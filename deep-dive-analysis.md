@@ -378,4 +378,96 @@ Notable: no 1977 shows in the top 10 despite Cornell '77 being the canonical "be
 
 ---
 
+## 12. Built to Spill: A Different Planet
+
+Built to Spill occupies entirely different territory in this 10-dimensional space. Where the Dead and Phish explore the tension between groove and improvisation, BTS barely improvises at all — but they are, by far, the tightest and grooviest band in the library.
+
+### Three-Band Comparison (All 10 Scores)
+
+| Score | Dead | Phish | BTS | BTS Character |
+|-------|------|-------|-----|---------------|
+| **Tightness** | 54.3 | 51.7 | **68.4** | +14 over Dead |
+| **Groove** | 40.2 | 37.3 | **60.0** | +20 over Dead |
+| **Valence** | 34.4 | 29.8 | **49.2** | Dramatically brighter |
+| **Energy** | 53.5 | **71.3** | 55.8 | — |
+| Improvisation | 17.0 | **20.0** | 5.5 | Almost never improvises |
+| Exploratory | **34.9** | 35.3 | 31.9 | Slightly less broad |
+| Transcendence | 42.5 | **48.9** | 40.0 | Lower but via different path |
+| Build Quality | **37.4** | 40.6 | 27.8 | Least building |
+| Intensity | 39.8 | 32.7 | **47.9** | Most dynamically extreme |
+| Arousal | 37.4 | **51.3** | 45.4 | — |
+
+The personality gaps tell the story:
+
+| Gap | Dead | Phish | BTS |
+|-----|------|-------|-----|
+| Tightness − Improvisation | +37 | +32 | **+63** |
+| Groove − Improvisation | +23 | +17 | **+54** |
+| Valence − Arousal | -3 | **-22** | **+4** |
+
+**BTS is the anti-Dead.** The Dead have the smallest gap between tightness and improvisation (they sacrifice tightness for exploration); BTS has the largest (they sacrifice improvisation for precision). The Dead are dark (valence < arousal by 3 pts); Phish is very dark (valence < arousal by 22 pts!); BTS is the only band that's brighter than it is activated.
+
+### The BTS Sound Profile
+
+- **60.8% of BTS tracks** are "locked in" (groove > 55, tightness > 65). For Dead: 1.0%. For Phish: 0.2%.
+- **80.8% of BTS tracks** are bright (valence > 45). For Dead: 9.3%. For Phish: 9.5%.
+- **68.2% of BTS transcendent moments** are composed (imp < 15). For Dead: 5.8%. For Phish: 11.4%.
+
+BTS achieves peak experience almost exclusively through composed intensity — tight, groovy, bright performances of well-crafted songs. When they extend a song (Broken Chairs from 3.7 to 25.2 min; Lie for a Lie to 38.3 min), the tightness often *increases* rather than degrading.
+
+### The Outlier Track: 7/4/99 (26 minutes)
+
+This unnamed 26-minute BTS jam is one of the most remarkable tracks in the library:
+
+| Score | Value | Percentile |
+|-------|-------|-----------|
+| Tightness | 89 | **99.9th** (8th/9,985) |
+| Valence | 73 | **99.9th** (6th/9,985) |
+| Groove | 77 | **99.1st** (85th/9,985) |
+| Transcendence | 68 | 97.3rd |
+| Build Quality | 61 | 94.3rd |
+| Improvisation | 29 | 82.4th |
+
+It's the 6th brightest and 8th tightest track in the entire 10,000-track library — a 26-minute jam that maintains near-perfect rhythmic precision, maximum brightness, and top-100 groove. Nothing in Dead or Phish comes close to sustaining this combination at this length.
+
+### BTS Era Evolution
+
+| Year | n | Trn | Groove | Tightness | Imp | Valence |
+|------|---|-----|--------|-----------|-----|---------|
+| 1993 | 11 | 46.2 | 57.7 | 63.1 | 3.5 | 53.4 |
+| 1997 | 40 | 36.4 | **61.6** | 68.2 | 3.5 | **61.2** |
+| 1998 | 58 | 24.3 | 55.3 | **71.5** | 2.5 | 43.0 |
+| 1999 | 57 | 39.4 | 54.0 | 65.1 | **7.7** | 46.9 |
+| 2005 | 84 | **49.2** | 60.1 | 70.9 | 8.6 | 49.5 |
+| 2006 | 64 | 45.2 | **64.6** | **71.6** | 5.6 | **53.6** |
+| 2011 | 19 | 43.9 | **64.9** | **75.0** | 4.0 | 47.2 |
+| 2012 | 32 | **47.2** | **65.8** | **75.5** | 5.3 | 48.5 |
+
+**BTS gets tighter and groovier over time** — the opposite of most bands. Tightness rises from 63.1 (1993) to 75.5 (2012). This may be Doug Martsch's guitar work becoming more precise, or better live sound, or both. Their peak transcendence years (2005-2006) coincide with their peak groove years, not peak improvisation — confirming the composed-peak model.
+
+### Best BTS Song Vehicles
+
+| Song | n | Avg Trn | Groove | Tightness | Imp | Character |
+|------|---|---------|--------|-----------|-----|-----------|
+| Lie for a Lie | 3 | 61.9 | 67.8 | — | 17.0 | The rare BTS extended jam vehicle |
+| Virginia Reel | 4 | 58.9 | 67.5 | — | 9.2 | Tight → transcendent |
+| Velvet Waltz | 8 | 58.9 | 55.6 | — | 16.0 | Most improvisatory BTS song |
+| Goin' Against Your Mind | 9 | 58.5 | 62.6 | — | 10.8 | Reliable peak |
+| Carry The Zero | 9 | 57.5 | 60.6 | — | 11.3 | Second most reliable |
+| Broken Chairs | 10 | 54.0 | 63.2 | — | 15.2 | Widest range: 3.7-25 min |
+
+**Broken Chairs** is BTS's Dark Star — the one song that can be anything from a 3.7-minute album cut to a 25-minute exploration. Its transcendence range (16-70) mirrors Dark Star's. But even at 25 minutes, it maintains groove 41 and tightness 64 — levels the Dead rarely hit in a 4-minute song.
+
+### Best BTS Show: 6/3/06
+
+| Date | Tracks | Avg Trn | Groove | Tightness | Peak Trn |
+|------|--------|---------|--------|-----------|----------|
+| **6/3/06** | 14 | **57.7** | 64.8 | 75.3 | 69.2 |
+| 9/24/05 | 10 | 52.9 | 67.1 | 74.2 | 62.9 |
+| 10/11/05 | 14 | 48.9 | **76.0** | **78.8** | 66.0 |
+
+6/3/06 is the highest average transcendence BTS show. 10/11/05 is the grooviest and tightest show in the entire library across all three bands — groove 76.0, tightness 78.8, every single track locked in.
+
+---
+
 *Generated by [setbreak](https://github.com/lexicone42/setbreak) — a Rust CLI for algorithmic analysis of jam-band music libraries. 10 jam scores computed from 189 DSP audio features per track.*

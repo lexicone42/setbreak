@@ -362,6 +362,81 @@ fn matches_year_filter(date: &str, filter: &str) -> bool {
     false
 }
 
+/// Result of a download operation.
+pub struct DownloadResult {
+    pub identifier: String,
+    pub source_quality: i32,
+    pub format_quality: i32,
+    pub dest_dir: String,
+    pub skipped_sbd: bool,
+}
+
+/// Pick the best downloadable recording for a date, respecting SBD restrictions.
+/// Returns (identifier, source_quality, format_quality, skipped_sbd).
+pub fn pick_best_source(
+    db: &Database,
+    collection: &str,
+    date: &str,
+    sbd_stream_only: bool,
+) -> Result<Option<(String, i32, i32, bool)>> {
+    let shows = db.get_archive_shows_by_date(collection, date)?;
+    if shows.is_empty() {
+        return Ok(None);
+    }
+
+    let mut skipped_sbd = false;
+    let candidates: Vec<_> = if sbd_stream_only {
+        let (sbd, non_sbd): (Vec<_>, Vec<_>) = shows.into_iter().partition(|s| s.source_quality == 3);
+        if !sbd.is_empty() && !non_sbd.is_empty() {
+            skipped_sbd = true;
+        }
+        non_sbd
+    } else {
+        shows
+    };
+
+    if candidates.is_empty() {
+        return Ok(None);
+    }
+
+    // Best = highest combined quality (source * 10 + format)
+    let best = candidates.iter()
+        .max_by_key(|s| s.source_quality * 10 + s.format_quality)
+        .unwrap();
+
+    Ok(Some((best.identifier.clone(), best.source_quality, best.format_quality, skipped_sbd)))
+}
+
+/// Format quality label.
+pub fn source_label(quality: i32) -> &'static str {
+    match quality {
+        3 => "sbd",
+        2 => "matrix",
+        1 => "aud",
+        _ => "unknown",
+    }
+}
+
+/// Format quality label.
+pub fn format_label(quality: i32) -> &'static str {
+    match quality {
+        3 => "flac",
+        2 => "shn",
+        1 => "mp3",
+        _ => "unknown",
+    }
+}
+
+/// Build the glob pattern for ia download based on format quality.
+pub fn download_glob(format_quality: i32) -> &'static str {
+    match format_quality {
+        3 => "*.flac",
+        2 => "*.shn",
+        1 => "*.mp3",
+        _ => "*.flac", // default to flac
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -34,6 +34,9 @@ pub struct BandEntry {
     /// Prefix used in search fallback → collection/creator mapping.
     /// e.g., "gd" → "GratefulDead" for collection-based search
     pub search_fallback_prefix: Option<(String, String)>,
+    /// SBD recordings are stream-only on archive.org (cannot be downloaded).
+    /// When true, downloads will prefer matrix/audience sources.
+    pub sbd_stream_only: bool,
 }
 
 /// The unified band registry — single source of truth for all band data.
@@ -124,6 +127,7 @@ impl BandRegistry {
                     archive_strategy,
                     normalizations: Vec::new(),
                     search_fallback_prefix: None,
+                    sbd_stream_only: false,
                 });
             }
         }
@@ -275,6 +279,21 @@ impl BandRegistry {
         None
     }
 
+    /// Check if a band's SBD recordings are stream-only on archive.org.
+    /// Returns true if SBDs cannot be downloaded (e.g., Grateful Dead).
+    pub fn is_sbd_stream_only(&self, input: &str) -> bool {
+        let lower = input.to_lowercase();
+        if let Some(&i) = self.code_to_index.get(&lower) {
+            return self.bands[i].sbd_stream_only;
+        }
+        for (name, &i) in &self.search_to_index {
+            if lower == *name || lower.replace(' ', "") == name.replace(' ', "") {
+                return self.bands[i].sbd_stream_only;
+            }
+        }
+        false
+    }
+
     /// Get all band entries (for iteration).
     pub fn bands(&self) -> &[BandEntry] {
         &self.bands
@@ -302,6 +321,7 @@ fn builtin_bands() -> Vec<BandEntry> {
                 prefix: "gd".to_string(),
             }],
             search_fallback_prefix: Some(("gd".into(), "GratefulDead".into())),
+            sbd_stream_only: true,
         },
         BandEntry {
             canonical_name: "Jerry Garcia Band".to_string(),
@@ -310,6 +330,7 @@ fn builtin_bands() -> Vec<BandEntry> {
             archive_strategy: None,
             normalizations: Vec::new(),
             search_fallback_prefix: None,
+            sbd_stream_only: false,
         },
         BandEntry {
             canonical_name: "Phish".to_string(),
@@ -321,6 +342,7 @@ fn builtin_bands() -> Vec<BandEntry> {
                 to: "phish".to_string(),
             }],
             search_fallback_prefix: Some(("ph".into(), "Phish".into())),
+            sbd_stream_only: false,
         },
         BandEntry {
             canonical_name: "Widespread Panic".to_string(),
@@ -329,6 +351,7 @@ fn builtin_bands() -> Vec<BandEntry> {
             archive_strategy: None,
             normalizations: Vec::new(),
             search_fallback_prefix: None,
+            sbd_stream_only: false,
         },
         BandEntry {
             canonical_name: "moe.".to_string(),
@@ -337,6 +360,7 @@ fn builtin_bands() -> Vec<BandEntry> {
             archive_strategy: None,
             normalizations: Vec::new(),
             search_fallback_prefix: None,
+            sbd_stream_only: false,
         },
         BandEntry {
             canonical_name: "Sound Tribe Sector 9".to_string(),
@@ -345,6 +369,7 @@ fn builtin_bands() -> Vec<BandEntry> {
             archive_strategy: None,
             normalizations: Vec::new(),
             search_fallback_prefix: None,
+            sbd_stream_only: false,
         },
         BandEntry {
             canonical_name: "Umphrey's McGee".to_string(),
@@ -353,6 +378,7 @@ fn builtin_bands() -> Vec<BandEntry> {
             archive_strategy: None,
             normalizations: Vec::new(),
             search_fallback_prefix: None,
+            sbd_stream_only: false,
         },
         BandEntry {
             canonical_name: "Disco Biscuits".to_string(),
@@ -361,6 +387,7 @@ fn builtin_bands() -> Vec<BandEntry> {
             archive_strategy: None,
             normalizations: Vec::new(),
             search_fallback_prefix: None,
+            sbd_stream_only: false,
         },
         BandEntry {
             canonical_name: "Ween".to_string(),
@@ -369,6 +396,7 @@ fn builtin_bands() -> Vec<BandEntry> {
             archive_strategy: None,
             normalizations: Vec::new(),
             search_fallback_prefix: None,
+            sbd_stream_only: false,
         },
         BandEntry {
             canonical_name: "Gov't Mule".to_string(),
@@ -377,6 +405,7 @@ fn builtin_bands() -> Vec<BandEntry> {
             archive_strategy: None,
             normalizations: Vec::new(),
             search_fallback_prefix: None,
+            sbd_stream_only: false,
         },
         BandEntry {
             canonical_name: "Allman Brothers Band".to_string(),
@@ -385,6 +414,7 @@ fn builtin_bands() -> Vec<BandEntry> {
             archive_strategy: None,
             normalizations: Vec::new(),
             search_fallback_prefix: None,
+            sbd_stream_only: false,
         },
         BandEntry {
             canonical_name: "Dark Star Orchestra".to_string(),
@@ -393,6 +423,7 @@ fn builtin_bands() -> Vec<BandEntry> {
             archive_strategy: None,
             normalizations: Vec::new(),
             search_fallback_prefix: None,
+            sbd_stream_only: false,
         },
         BandEntry {
             canonical_name: "Led Zeppelin".to_string(),
@@ -401,6 +432,7 @@ fn builtin_bands() -> Vec<BandEntry> {
             archive_strategy: None,
             normalizations: Vec::new(),
             search_fallback_prefix: None,
+            sbd_stream_only: false,
         },
         BandEntry {
             canonical_name: "Goose".to_string(),
@@ -409,6 +441,7 @@ fn builtin_bands() -> Vec<BandEntry> {
             archive_strategy: None,
             normalizations: Vec::new(),
             search_fallback_prefix: None,
+            sbd_stream_only: false,
         },
         BandEntry {
             canonical_name: "Built to Spill".to_string(),
@@ -420,6 +453,7 @@ fn builtin_bands() -> Vec<BandEntry> {
                 to: "BTS".to_string(),
             }],
             search_fallback_prefix: Some(("bts".into(), "BuiltToSpill".into())),
+            sbd_stream_only: false,
         },
         BandEntry {
             canonical_name: "Billy Strings".to_string(),
@@ -428,6 +462,7 @@ fn builtin_bands() -> Vec<BandEntry> {
             archive_strategy: None,
             normalizations: Vec::new(),
             search_fallback_prefix: None,
+            sbd_stream_only: false,
         },
         BandEntry {
             canonical_name: "King Gizzard & the Lizard Wizard".to_string(),
@@ -436,6 +471,7 @@ fn builtin_bands() -> Vec<BandEntry> {
             archive_strategy: None,
             normalizations: Vec::new(),
             search_fallback_prefix: None,
+            sbd_stream_only: false,
         },
         BandEntry {
             canonical_name: "Trey Anastasio Band".to_string(),
@@ -444,6 +480,7 @@ fn builtin_bands() -> Vec<BandEntry> {
             archive_strategy: None,
             normalizations: Vec::new(),
             search_fallback_prefix: None,
+            sbd_stream_only: false,
         },
         BandEntry {
             canonical_name: "Lotus".to_string(),
@@ -452,6 +489,7 @@ fn builtin_bands() -> Vec<BandEntry> {
             archive_strategy: None,
             normalizations: Vec::new(),
             search_fallback_prefix: None,
+            sbd_stream_only: false,
         },
         BandEntry {
             canonical_name: "Joe Russo's Almost Dead".to_string(),
@@ -460,6 +498,7 @@ fn builtin_bands() -> Vec<BandEntry> {
             archive_strategy: None,
             normalizations: Vec::new(),
             search_fallback_prefix: None,
+            sbd_stream_only: false,
         },
         BandEntry {
             canonical_name: "String Cheese Incident".to_string(),
@@ -468,6 +507,7 @@ fn builtin_bands() -> Vec<BandEntry> {
             archive_strategy: None,
             normalizations: Vec::new(),
             search_fallback_prefix: None,
+            sbd_stream_only: false,
         },
         BandEntry {
             canonical_name: "Leftover Salmon".to_string(),
@@ -476,6 +516,7 @@ fn builtin_bands() -> Vec<BandEntry> {
             archive_strategy: None,
             normalizations: Vec::new(),
             search_fallback_prefix: None,
+            sbd_stream_only: false,
         },
         BandEntry {
             canonical_name: "Medeski Martin & Wood".to_string(),
@@ -484,6 +525,7 @@ fn builtin_bands() -> Vec<BandEntry> {
             archive_strategy: None,
             normalizations: Vec::new(),
             search_fallback_prefix: None,
+            sbd_stream_only: false,
         },
     ]
 }

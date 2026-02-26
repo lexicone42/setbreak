@@ -223,6 +223,24 @@ enum Commands {
         limit: usize,
     },
 
+    /// Download a show from archive.org (picks best non-SBD source for restricted bands)
+    Download {
+        /// Band code (gd, phish, bts)
+        #[arg(long)]
+        band: String,
+
+        /// Show date (YYYY-MM-DD)
+        date: String,
+
+        /// Destination directory (default: first music_dir from config)
+        #[arg(long)]
+        dest: Option<String>,
+
+        /// Dry run — show what would be downloaded without actually downloading
+        #[arg(long)]
+        dry_run: bool,
+    },
+
     /// Classify tracks as live, studio, or live_album (backfill existing tracks)
     Classify,
 
@@ -603,8 +621,86 @@ fn main() -> Result<()> {
             } else {
                 print_missing_shows(&result.missing);
                 println!();
-                println!("Download with: ia download <identifier>");
-                println!("  (install: pip install internetarchive)");
+                println!("Download with: setbreak download --band {} <DATE>", band);
+                let registry = setbreak::bands::registry();
+                if registry.is_sbd_stream_only(&band) {
+                    println!("  (SBD sources are stream-only; download will auto-select matrix/audience tapes)");
+                }
+            }
+        }
+
+        Commands::Download { band, date, dest, dry_run } => {
+            let registry = setbreak::bands::registry();
+
+            // Resolve band → archive strategy
+            let strategy = registry.resolve_archive_query(&band)
+                .context(format!("Unknown band '{}' or no archive.org strategy configured", band))?;
+            let collection = match strategy {
+                setbreak::bands::ArchiveStrategy::Collection(c) => c.as_str(),
+                setbreak::bands::ArchiveStrategy::Creator(c) => c.as_str(),
+            };
+            let sbd_restricted = registry.is_sbd_stream_only(&band);
+
+            // Pick best source
+            let result = setbreak::discovery::pick_best_source(&db, collection, &date, sbd_restricted)
+                .context("Failed to query archive shows")?;
+
+            match result {
+                None => {
+                    if sbd_restricted {
+                        println!("No downloadable recordings found for {} on {}.", band, date);
+                        println!("(SBD sources are stream-only for this band; no audience/matrix tapes available)");
+                    } else {
+                        println!("No recordings found for {} on {}.", band, date);
+                        println!("Try running `setbreak discover --band {}` first to populate the cache.", band);
+                    }
+                }
+                Some((identifier, source_q, format_q, skipped_sbd)) => {
+                    let src = setbreak::discovery::source_label(source_q);
+                    let fmt = setbreak::discovery::format_label(format_q);
+
+                    if skipped_sbd {
+                        println!("Note: Skipping SBD sources (stream-only for this band)");
+                    }
+                    println!("Best source: {} ({}/{})", identifier, src, fmt);
+
+                    if dry_run {
+                        let glob = setbreak::discovery::download_glob(format_q);
+                        println!("\nWould run:");
+                        println!("  ia download {} --glob='{}' --no-directories", identifier, glob);
+                    } else {
+                        // Resolve destination directory
+                        let dest_dir = dest.unwrap_or_else(|| {
+                            if !config.music_dirs.is_empty() {
+                                config.music_dirs[0].to_string_lossy().to_string()
+                            } else {
+                                ".".to_string()
+                            }
+                        });
+
+                        let glob = setbreak::discovery::download_glob(format_q);
+                        let dest_path = format!("{}/{}", dest_dir, identifier);
+
+                        println!("Downloading to: {}", dest_path);
+                        println!("Running: ia download {} --destdir={} --glob='{}' --no-directories",
+                            identifier, dest_dir, glob);
+
+                        let status = std::process::Command::new("ia")
+                            .args(["download", &identifier,
+                                &format!("--destdir={}", dest_dir),
+                                &format!("--glob={}", glob),
+                                "--no-directories"])
+                            .status()
+                            .context("Failed to run 'ia' command. Install with: pip install internetarchive")?;
+
+                        if status.success() {
+                            println!("Download complete!");
+                            println!("Next: setbreak scan {} && setbreak analyze", dest_path);
+                        } else {
+                            println!("Download failed (exit code: {:?})", status.code());
+                        }
+                    }
+                }
             }
         }
 
