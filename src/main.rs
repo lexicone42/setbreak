@@ -235,6 +235,69 @@ enum Commands {
         query: String,
     },
 
+    /// Show percentile ranks for a specific track across all scores
+    Rank {
+        /// Song title (substring match)
+        song: String,
+
+        /// Show date to narrow the search (YYYY-MM-DD)
+        #[arg(short, long)]
+        date: Option<String>,
+    },
+
+    /// Show score distribution as a histogram
+    Dist {
+        /// Which score to show distribution for
+        #[arg(value_enum)]
+        score: ScoreName,
+
+        /// Number of histogram bins
+        #[arg(long, default_value = "20")]
+        bins: usize,
+
+        /// Highlight a specific song in the distribution
+        #[arg(long)]
+        song: Option<String>,
+
+        /// Filter to only live recordings
+        #[arg(long)]
+        live_only: bool,
+
+        /// Minimum duration in minutes
+        #[arg(long)]
+        min_duration: Option<f64>,
+    },
+
+    /// Find features most correlated with a score (or between two scores)
+    Correlate {
+        /// Target score to find predictors for
+        #[arg(value_enum)]
+        score: ScoreName,
+
+        /// Only analyze live recordings
+        #[arg(long)]
+        live_only: bool,
+
+        /// Minimum duration in minutes (useful for jam-focused analysis)
+        #[arg(long)]
+        min_duration: Option<f64>,
+
+        /// Number of top features to show
+        #[arg(short = 'n', long, default_value = "25")]
+        limit: usize,
+    },
+
+    /// Show correlation matrix between all jam scores
+    ScoreMatrix {
+        /// Only live recordings
+        #[arg(long)]
+        live_only: bool,
+
+        /// Minimum duration in minutes
+        #[arg(long)]
+        min_duration: Option<f64>,
+    },
+
     /// Show library statistics
     Stats,
 
@@ -680,6 +743,301 @@ fn main() -> Result<()> {
             println!("{} rows", rows_data.len());
         }
 
+        Commands::Rank { song, date } => {
+            use setbreak::db::columns::SCORE_COLUMNS;
+
+            let found = db.find_track_id(&song, date.as_deref())
+                .context("Search failed")?;
+            let (track_id, title, track_date) = match found {
+                Some(t) => t,
+                None => {
+                    println!("No analyzed track matching \"{}\".", song);
+                    return Ok(());
+                }
+            };
+
+            println!("Percentile ranks for \"{}\" ({})", title, track_date);
+            println!();
+
+            // Get this track's scores and compute percentiles
+            let score_names = [
+                ("energy",        "Energy"),
+                ("intensity",     "Intensity"),
+                ("groove",        "Groove"),
+                ("improvisation", "Improvisation"),
+                ("tightness",     "Tightness"),
+                ("build_quality", "Build Quality"),
+                ("exploratory",   "Exploratory"),
+                ("transcendence", "Transcendence"),
+                ("valence",       "Valence"),
+                ("arousal",       "Arousal"),
+            ];
+
+            let sql = format!(
+                "SELECT {} FROM analysis_results WHERE track_id = ?1",
+                SCORE_COLUMNS.join(", ")
+            );
+            let scores: Vec<f64> = self::rusqlite_row_to_f64_vec(&db, &sql, track_id)?;
+
+            println!("{:<16} {:>6} {:>8} {:>8}", "Score", "Value", "Pctl", "Rank");
+            println!("{}", "-".repeat(42));
+
+            for (i, (_, label)) in score_names.iter().enumerate() {
+                let col = SCORE_COLUMNS[i];
+                let val = scores[i];
+
+                // Count tracks below this score, and total with non-null scores
+                let pctl_sql = format!(
+                    "SELECT
+                        COUNT(CASE WHEN a.{col} < ?1 THEN 1 END),
+                        COUNT(a.{col})
+                     FROM analysis_results a
+                     JOIN tracks t ON t.id = a.track_id
+                     WHERE {NOT_GARBAGE}",
+                    col = col,
+                    NOT_GARBAGE = setbreak::db::columns::NOT_GARBAGE,
+                );
+                let (below, total): (i64, i64) = db.conn.query_row(
+                    &pctl_sql,
+                    rusqlite::params![val],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )?;
+
+                let pctl = if total > 0 {
+                    100.0 * below as f64 / total as f64
+                } else {
+                    0.0
+                };
+                let rank_from_top = total - below;
+
+                println!(
+                    "{:<16} {:>6.0} {:>7.1}% {:>5}/{:<5}",
+                    label, val, pctl, rank_from_top, total
+                );
+            }
+
+            // Also show duration
+            let dur: f64 = db.conn.query_row(
+                "SELECT COALESCE(duration, 0) / 60.0 FROM analysis_results WHERE track_id = ?1",
+                rusqlite::params![track_id],
+                |row| row.get(0),
+            )?;
+            println!();
+            println!("Duration: {:.1} min", dur);
+        }
+
+        Commands::Dist { score, bins, song, live_only, min_duration } => {
+            let col = score.column();
+            let min_dur_secs = min_duration.map(|m| m * 60.0);
+
+            // Build WHERE clause
+            let mut where_parts = vec![
+                format!("a.{col} IS NOT NULL"),
+                format!("{}", setbreak::db::columns::NOT_GARBAGE),
+            ];
+            if live_only {
+                where_parts.push(format!("{}", setbreak::db::columns::LIVE_ONLY));
+            }
+            if let Some(dur) = min_dur_secs {
+                where_parts.push(format!("a.duration >= {dur}"));
+            }
+            let where_clause = where_parts.join(" AND ");
+
+            // Get min, max, and all values
+            let stats_sql = format!(
+                "SELECT MIN(a.{col}), MAX(a.{col}), COUNT(*), AVG(a.{col}),
+                        ROUND(AVG(a.{col} * a.{col}) - AVG(a.{col}) * AVG(a.{col}), 2)
+                 FROM analysis_results a
+                 JOIN tracks t ON t.id = a.track_id
+                 WHERE {where_clause}"
+            );
+            let (min_val, max_val, total, mean, variance): (f64, f64, i64, f64, f64) =
+                db.conn.query_row(&stats_sql, [], |row| {
+                    Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?))
+                })?;
+
+            let std_dev = variance.max(0.0).sqrt();
+
+            println!("Distribution: {} ({} tracks)", score.label(), total);
+            println!("  min={:.1}  mean={:.1}  std={:.1}  max={:.1}", min_val, mean, std_dev, max_val);
+            println!();
+
+            // Build histogram buckets
+            let range = max_val - min_val;
+            if range <= 0.0 || total == 0 {
+                println!("No variation in data.");
+                return Ok(());
+            }
+            let bin_width = range / bins as f64;
+
+            let hist_sql = format!(
+                "SELECT CAST((a.{col} - ?1) / ?2 AS INTEGER) as bucket, COUNT(*)
+                 FROM analysis_results a
+                 JOIN tracks t ON t.id = a.track_id
+                 WHERE {where_clause}
+                 GROUP BY bucket
+                 ORDER BY bucket"
+            );
+
+            let mut stmt = db.conn.prepare(&hist_sql)?;
+            let mut bucket_counts = vec![0i64; bins];
+            let rows = stmt.query_map(
+                rusqlite::params![min_val, bin_width],
+                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
+            )?;
+            for r in rows {
+                let (bucket, count) = r?;
+                let idx = (bucket as usize).min(bins - 1);
+                bucket_counts[idx] += count;
+            }
+
+            let max_count = *bucket_counts.iter().max().unwrap_or(&1);
+            let bar_max = 50;
+
+            // If song filter, find where it falls
+            let song_bucket: Option<usize> = if let Some(ref s) = song {
+                let song_sql = format!(
+                    "SELECT a.{col}
+                     FROM analysis_results a
+                     JOIN tracks t ON t.id = a.track_id
+                     WHERE (t.parsed_title LIKE ?1 OR t.title LIKE ?1)
+                       AND a.{col} IS NOT NULL
+                     ORDER BY a.{col} DESC LIMIT 1"
+                );
+                let pattern = format!("%{s}%");
+                let val: Option<f64> = db.conn.query_row(
+                    &song_sql, rusqlite::params![pattern], |row| row.get(0),
+                ).ok();
+                val.map(|v| ((v - min_val) / bin_width).floor() as usize).map(|b| b.min(bins - 1))
+            } else {
+                None
+            };
+
+            for i in 0..bins {
+                let lo = min_val + i as f64 * bin_width;
+                let hi = lo + bin_width;
+                let count = bucket_counts[i];
+                let bar_len = if max_count > 0 {
+                    (count as f64 / max_count as f64 * bar_max as f64) as usize
+                } else {
+                    0
+                };
+                let marker = if song_bucket == Some(i) { "*" } else { " " };
+                let bar: String = "#".repeat(bar_len);
+                println!(
+                    "{:>5.0}-{:<5.0} {:>5} {}{} {}",
+                    lo, hi, count, marker, bar,
+                    if count > 0 {
+                        format!("{:.1}%", 100.0 * count as f64 / total as f64)
+                    } else {
+                        String::new()
+                    }
+                );
+            }
+
+            if let Some(ref s) = song {
+                println!();
+                println!("* = bucket containing \"{}\"", s);
+            }
+        }
+
+        Commands::Correlate { score, live_only, min_duration, limit } => {
+            use setbreak::db::columns::ANALYSIS_SCHEMA;
+
+            let target_col = score.column();
+            let min_dur_secs = min_duration.map(|m| m * 60.0);
+
+            // Build WHERE clause
+            let mut where_parts = vec![
+                format!("a.{target_col} IS NOT NULL"),
+                format!("{}", setbreak::db::columns::NOT_GARBAGE),
+            ];
+            if live_only {
+                where_parts.push(format!("{}", setbreak::db::columns::LIVE_ONLY));
+            }
+            if let Some(dur) = min_dur_secs {
+                where_parts.push(format!("a.duration >= {dur}"));
+            }
+            let where_clause = where_parts.join(" AND ");
+
+            // Collect numeric feature columns (skip TEXT/JSON columns and the target itself)
+            let feature_cols: Vec<&str> = ANALYSIS_SCHEMA.iter()
+                .filter(|c| c.sql_type == "REAL" || c.sql_type == "INT")
+                .filter(|c| c.name != target_col)
+                .filter(|c| !c.name.ends_with("_score")) // skip other scores
+                .map(|c| c.name)
+                .collect();
+
+            println!("Correlating {} features with {}...", feature_cols.len(), score.label());
+            println!();
+
+            // Compute Pearson correlation for each feature
+            let mut correlations: Vec<(&str, f64, &str, &str)> = Vec::new();
+
+            for &feat in &feature_cols {
+                // SQLite Pearson r via covariance / (std_x * std_y)
+                let sql = format!(
+                    "SELECT
+                        COUNT(*),
+                        AVG(a.{feat}),
+                        AVG(a.{target_col}),
+                        AVG(a.{feat} * a.{target_col}),
+                        AVG(a.{feat} * a.{feat}),
+                        AVG(a.{target_col} * a.{target_col})
+                     FROM analysis_results a
+                     JOIN tracks t ON t.id = a.track_id
+                     WHERE {where_clause} AND a.{feat} IS NOT NULL"
+                );
+
+                let result = db.conn.query_row(&sql, [], |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, f64>(1)?,
+                        row.get::<_, f64>(2)?,
+                        row.get::<_, f64>(3)?,
+                        row.get::<_, f64>(4)?,
+                        row.get::<_, f64>(5)?,
+                    ))
+                });
+
+                if let Ok((n, mean_x, mean_y, mean_xy, mean_x2, mean_y2)) = result {
+                    if n < 100 { continue; } // skip sparse features
+                    let cov = mean_xy - mean_x * mean_y;
+                    let var_x = mean_x2 - mean_x * mean_x;
+                    let var_y = mean_y2 - mean_y * mean_y;
+                    if var_x > 1e-10 && var_y > 1e-10 {
+                        let r = cov / (var_x.sqrt() * var_y.sqrt());
+                        let category = ANALYSIS_SCHEMA.iter()
+                            .find(|c| c.name == feat)
+                            .map(|c| c.category)
+                            .unwrap_or("?");
+                        let desc = ANALYSIS_SCHEMA.iter()
+                            .find(|c| c.name == feat)
+                            .map(|c| c.description)
+                            .unwrap_or("");
+                        correlations.push((feat, r, category, desc));
+                    }
+                }
+            }
+
+            // Sort by absolute correlation
+            correlations.sort_by(|a, b| b.1.abs().partial_cmp(&a.1.abs()).unwrap());
+
+            println!("{:<35} {:>6} {:<15} {}", "Feature", "r", "Category", "Description");
+            println!("{}", "-".repeat(100));
+
+            for (feat, r, cat, desc) in correlations.iter().take(limit) {
+                let sign = if *r > 0.0 { "+" } else { "-" };
+                println!(
+                    "{:<35} {}{:.3} {:<15} {}",
+                    feat, sign, r.abs(), cat,
+                    if desc.len() > 35 { &desc[..35] } else { desc }
+                );
+            }
+            println!();
+            println!("{} features analyzed", correlations.len());
+        }
+
         Commands::Schema { grep, category, scores } => {
             use setbreak::db::columns::ANALYSIS_SCHEMA;
 
@@ -723,6 +1081,70 @@ fn main() -> Result<()> {
             }
         }
 
+        Commands::ScoreMatrix { live_only, min_duration } => {
+            use setbreak::db::columns::SCORE_COLUMNS;
+            let min_dur_secs = min_duration.map(|m| m * 60.0);
+
+            let mut where_parts = vec![
+                format!("{}", setbreak::db::columns::NOT_GARBAGE),
+                "a.energy_score IS NOT NULL".to_string(),
+            ];
+            if live_only {
+                where_parts.push(format!("{}", setbreak::db::columns::LIVE_ONLY));
+            }
+            if let Some(dur) = min_dur_secs {
+                where_parts.push(format!("a.duration >= {dur}"));
+            }
+            let where_clause = where_parts.join(" AND ");
+
+            // Load all score vectors
+            let sql = format!(
+                "SELECT {} FROM analysis_results a JOIN tracks t ON t.id = a.track_id WHERE {}",
+                SCORE_COLUMNS.join(", "),
+                where_clause,
+            );
+            let mut stmt = db.conn.prepare(&sql)?;
+            let mut data: Vec<Vec<f64>> = vec![Vec::new(); SCORE_COLUMNS.len()];
+            let mut n = 0usize;
+            let mut rows = stmt.query([])?;
+            while let Some(row) = rows.next()? {
+                for (i, col_data) in data.iter_mut().enumerate() {
+                    col_data.push(row.get::<_, f64>(i).unwrap_or(0.0));
+                }
+                n += 1;
+            }
+
+            // Compute Pearson r for each pair
+            let labels = ["Eng", "Int", "Grv", "Imp", "Tgt", "Bld", "Exp", "Trn", "Val", "Aro"];
+
+            println!("Score correlation matrix ({} tracks)", n);
+            println!();
+
+            // Header
+            print!("{:>5}", "");
+            for l in &labels {
+                print!("{:>6}", l);
+            }
+            println!();
+            println!("{}", "-".repeat(5 + labels.len() * 6));
+
+            for i in 0..SCORE_COLUMNS.len() {
+                print!("{:>5}", labels[i]);
+                for j in 0..SCORE_COLUMNS.len() {
+                    if j > i {
+                        print!("{:>6}", "");
+                        continue;
+                    }
+                    let r = pearson_r(&data[i], &data[j]);
+                    print!("{:>6.2}", r);
+                }
+                println!();
+            }
+
+            println!();
+            println!("Read: row correlates with column at r value");
+        }
+
         Commands::Stats => {
             let stats = db.stats().context("Failed to get stats")?;
             println!("Library Statistics");
@@ -753,6 +1175,34 @@ fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Pearson correlation coefficient between two equal-length f64 slices.
+fn pearson_r(x: &[f64], y: &[f64]) -> f64 {
+    let n = x.len() as f64;
+    if n < 2.0 { return 0.0; }
+    let sum_x: f64 = x.iter().sum();
+    let sum_y: f64 = y.iter().sum();
+    let sum_xy: f64 = x.iter().zip(y.iter()).map(|(a, b)| a * b).sum();
+    let sum_x2: f64 = x.iter().map(|a| a * a).sum();
+    let sum_y2: f64 = y.iter().map(|a| a * a).sum();
+    let num = n * sum_xy - sum_x * sum_y;
+    let den = ((n * sum_x2 - sum_x * sum_x) * (n * sum_y2 - sum_y * sum_y)).sqrt();
+    if den < 1e-10 { 0.0 } else { num / den }
+}
+
+/// Extract a row of f64 values from a single-row query.
+fn rusqlite_row_to_f64_vec(db: &setbreak::db::Database, sql: &str, track_id: i64) -> Result<Vec<f64>> {
+    let mut stmt = db.conn.prepare(sql)?;
+    let col_count = stmt.column_count();
+    let row = stmt.query_row(rusqlite::params![track_id], |row| {
+        let mut vals = Vec::with_capacity(col_count);
+        for i in 0..col_count {
+            vals.push(row.get::<_, f64>(i).unwrap_or(0.0));
+        }
+        Ok(vals)
+    })?;
+    Ok(row)
 }
 
 /// Print a table of track scores with the sort column highlighted.
