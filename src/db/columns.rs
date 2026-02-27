@@ -27,7 +27,7 @@ pub const SCORE_COLUMNS: &[&str] = &[
 ];
 
 /// SQL SELECT fragment shared by all TrackScore queries.
-/// Produces columns 0..14 matching `map_track_score` positional indices.
+/// Produces columns 0..15 matching `map_track_score` positional indices.
 /// Use with: `FROM analysis_results a JOIN tracks t ON t.id = a.track_id`
 pub const TRACK_SCORE_SELECT: &str =
     "COALESCE(t.parsed_title, t.title, '(untitled)'),
@@ -38,7 +38,8 @@ pub const TRACK_SCORE_SELECT: &str =
      COALESCE(a.groove_score, 0), COALESCE(a.improvisation_score, 0),
      COALESCE(a.tightness_score, 0), COALESCE(a.build_quality_score, 0),
      COALESCE(a.exploratory_score, 0), COALESCE(a.transcendence_score, 0),
-     COALESCE(a.valence_score, 0), COALESCE(a.arousal_score, 0)";
+     COALESCE(a.valence_score, 0), COALESCE(a.arousal_score, 0),
+     COALESCE(t.file_path, '')";
 
 /// Common WHERE clause to exclude garbage-quality tracks.
 pub const NOT_GARBAGE: &str = "COALESCE(t.data_quality, 'ok') != 'garbage'";
@@ -52,6 +53,7 @@ pub fn map_track_score(row: &rusqlite::Row) -> rusqlite::Result<TrackScore> {
     Ok(TrackScore {
         title: row.get(0)?,
         date: row.get(1)?,
+        file_path: row.get(15)?,
         duration_min: row.get(2)?,
         key: row.get(3)?,
         tempo: row.get(4)?,

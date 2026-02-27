@@ -199,9 +199,17 @@ enum Commands {
         #[arg(long)]
         song: Option<String>,
 
+        /// Filter by band (gd, phish, bts, etc.)
+        #[arg(short, long)]
+        band: Option<String>,
+
         /// Number of results
         #[arg(short = 'n', long, default_value = "20")]
         limit: usize,
+
+        /// Show individual track scores within each chain
+        #[arg(long)]
+        detail: bool,
     },
 
     /// Discover missing shows from archive.org collections
@@ -556,7 +564,7 @@ fn main() -> Result<()> {
             println!("Dist = cosine distance (0 = identical, lower = more similar)");
         }
 
-        Commands::Chains { sort, date, min_length, min_duration, song, limit } => {
+        Commands::Chains { sort, date, min_length, min_duration, song, band, limit, detail } => {
             let dates = if let Some(ref d) = date {
                 if db.date_has_analysis(d).context("Query failed")? {
                     vec![d.clone()]
@@ -573,10 +581,26 @@ fn main() -> Result<()> {
                 return Ok(());
             }
 
+            // Resolve band filter: match band code against file paths
+            let band_path_substr: Option<String> = band.as_ref().map(|b| {
+                match b.to_lowercase().as_str() {
+                    "gd" | "grateful dead" | "dead" => "grateful_dead",
+                    "phish" | "ph" => "phish",
+                    "bts" | "built to spill" => "built_to_spill",
+                    other => other,
+                }.to_string()
+            });
+
             // Collect chains from all dates
             let mut all_chains = Vec::new();
             for d in &dates {
                 let tracks = db.query_show(d).context("Query failed")?;
+                // If band filter active, skip shows that don't match
+                if let Some(ref substr) = band_path_substr {
+                    if !tracks.is_empty() && !tracks[0].file_path.to_lowercase().contains(substr.as_str()) {
+                        continue;
+                    }
+                }
                 let chains = setbreak::chains::detect_chains(&tracks, min_length);
                 all_chains.extend(chains);
             }
@@ -597,6 +621,15 @@ fn main() -> Result<()> {
             println!("Top {} segue chains (sorted by {}):", chains.len(), sort.label());
             println!();
             print_chain_table(&chains, &sort);
+
+            if detail {
+                println!();
+                for c in &chains {
+                    println!("=== {} ({}) — {} songs, {:.1} min ===", c.chain_title(), c.date, c.chain_length, c.duration_min);
+                    print_score_table(&c.tracks, None);
+                    println!();
+                }
+            }
         }
 
         Commands::Discover { band, refresh, year, limit } => {

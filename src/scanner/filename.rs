@@ -69,9 +69,9 @@ static REMAINDER_TRACK_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)(?:^|[^a-zA-Z])(?:t(?:rack)?|tr)(?P<track>\d{1,3})").unwrap()
 });
 
-// Extract set: s + 1-2 digits, preceded by non-letter, followed by non-digit
+// Extract set: s/set + 1-2 digits, preceded by non-letter, followed by non-digit
 static REMAINDER_SET_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)(?:^|[^a-zA-Z])s(?P<set>\d{1,2})(?:[^0-9]|$)").unwrap()
+    Regex::new(r"(?i)(?:^|[^a-zA-Z])(?:set|s)(?P<set>\d{1,2})(?:[^0-9]|$)").unwrap()
 });
 
 // Combined disc+track without separator: d206 = disc 2, track 06
@@ -344,6 +344,18 @@ mod tests {
         assert_eq!(r.date.as_deref(), Some("1979-10-31"));
         assert_eq!(r.set.as_deref(), Some("2"));
         assert_eq!(r.track, Some(10));
+    }
+
+    #[test]
+    fn test_set_prefix_notation() {
+        // gd89-10-09Set2T05.shn — "Set" prefix for set, "T" prefix for track
+        setup();
+        let p = PathBuf::from("gd89-10-09Set2T05.shn");
+        let r = parse_path(&p);
+        assert_eq!(r.band.as_deref(), Some("Grateful Dead"));
+        assert_eq!(r.date.as_deref(), Some("1989-10-09"));
+        assert_eq!(r.set.as_deref(), Some("2"));
+        assert_eq!(r.track, Some(5));
     }
 
     #[test]

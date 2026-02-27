@@ -893,7 +893,7 @@ impl Database {
              JOIN tracks t ON t.id = a.track_id
              WHERE (t.parsed_date = ?1 OR t.date = ?1)
                AND {NOT_GARBAGE}
-             ORDER BY COALESCE(t.parsed_disc, t.disc_number, 1),
+             ORDER BY COALESCE(t.parsed_disc, t.disc_number, CAST(t.parsed_set AS INTEGER), 1),
                       COALESCE(t.parsed_track, t.track_number, 999)"
         );
         let mut stmt = self.conn.prepare(&sql)?;
@@ -990,7 +990,7 @@ impl Database {
 
         let rows = stmt
             .query_map(params![track_id, limit as i64], |row| {
-                Ok((map_track_score(row)?, row.get::<_, f64>(15)?))
+                Ok((map_track_score(row)?, row.get::<_, f64>(16)?))
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
         Ok(rows)

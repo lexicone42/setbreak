@@ -1,6 +1,6 @@
 # SetBreak Deep Dive: What 10,000 Live Jam Tracks Tell Us
 
-*Analysis of 5,761 Grateful Dead + 3,201 Phish + 1,182 Built to Spill live tracks using 10 algorithmic jam scores derived from DSP audio analysis.*
+*Analysis of 6,241 Grateful Dead + 3,201 Phish + 1,275 Built to Spill tracks (10,717 total) using 10 algorithmic jam scores derived from DSP audio analysis.*
 
 ## The Scoring System
 
@@ -467,6 +467,110 @@ It's the 6th brightest and 8th tightest track in the entire 10,000-track library
 | 10/11/05 | 14 | 48.9 | **76.0** | **78.8** | 66.0 |
 
 6/3/06 is the highest average transcendence BTS show. 10/11/05 is the grooviest and tightest show in the entire library across all three bands — groove 76.0, tightness 78.8, every single track locked in.
+
+---
+
+## 8. Legendary Shows Under the Microscope
+
+Four iconic Dead shows downloaded and analyzed: Cornell 5/8/77, Winterland 2/24/74, Fillmore West 2/27/69, Hampton Warlocks 10/9/89.
+
+### The Numbers
+
+| Show | Date | Tracks 60+ Trn | Best Track | Best Trn | Pctile |
+|------|------|----------------|------------|----------|--------|
+| Winterland | 2/24/74 | 9/26 (35%) | Morning Dew | 76 | 99.9th |
+| Cornell | 5/8/77 | 11/19 (58%) | Morning Dew | 72 | 99.5th |
+| Fillmore West | 2/27/69 | 2/3 (67%) | Cryptical Suite | 65 | 91.2th |
+| Hampton | 10/9/89 | 7/22 (32%) | Feedback | 63 | 86.0th |
+
+Cornell has the highest *density* of great jams (58% above 60-trn), but Winterland's peaks are higher. The Winterland Dark Star (29.6 min, trn=70, bld=78, imp=73) is a certified monster.
+
+Hampton's lower absolute scores reflect its audience recording quality — the energy component that feeds transcendence is inherently limited by recording fidelity. The LUFS calibration helps but can't fully bridge a 20-point energy gap between SBD and AUD recordings.
+
+### The Hampton Warlocks Chain
+
+The legendary "Formerly the Warlocks" second set detected as a single unbroken 12-song, 95.6-minute chain:
+
+> PITB → UJB → PITB Reprise → Dark Star → Feedback → Drums → Space → Death Don't Have No Mercy → Dear Mr. Fantasy → Hey Jude → Throwing Stones → Good Lovin'
+
+---
+
+## 9. Morning Dew: The Transcendence King
+
+Morning Dew has the **highest average transcendence** (71.2) of any song with 5+ performances — beating even Dark Star (68.4 avg). It's remarkably consistent: every performance scores between 64 and 76.
+
+| Song | N | Avg Trn | Max Trn | Avg Bld | Avg Imp | Avg Min |
+|------|---|---------|---------|---------|---------|---------|
+| **Morning Dew** | 10 | **71.2** | 75.8 | **64.9** | 31.2 | 11.6 |
+| Death Don't Have No Mercy | 5 | 68.8 | 74.6 | 63.0 | 29.4 | 9.3 |
+| **Dark Star** | 12 | 68.4 | 77.5 | 66.7 | **59.4** | 21.1 |
+| Stella Blue | 7 | 67.8 | 71.6 | 61.2 | 22.0 | 7.9 |
+| Black Peter | 8 | 66.3 | 72.4 | 64.3 | 36.0 | 10.2 |
+| Divided Sky | 14 | 66.0 | 71.9 | 63.2 | 57.2 | 16.3 |
+| Slave To The Traffic Light | 23 | 64.9 | 69.7 | 57.2 | 34.4 | 10.9 |
+| Harry Hood | 34 | 64.2 | 73.1 | 59.4 | 47.1 | 13.6 |
+| You Enjoy Myself | 22 | 62.8 | 72.2 | 64.7 | 64.3 | 21.6 |
+
+Morning Dew's secret is build quality (avg bld=65, highest of any song). It's structurally *designed* to build — that slow crescendo from quiet verses to the towering climax is exactly what the build_quality arc detector measures. It doesn't need to be improvisational to be transcendent; it achieves it through sheer emotional arc.
+
+Dark Star has the highest *ceiling* (77.5 peak) and the highest improvisation (59.4 avg). Its average performance is 21 minutes long. It's the open-form exploration vehicle; Morning Dew is the emotional inevitability.
+
+---
+
+## 10. Consistent vs. Explosive: Two Types of Jam Vehicles
+
+Some songs are *consistent* (low variance, always deliver) while others are *explosive* (high variance, either legendary or forgettable). This maps to a musically meaningful distinction.
+
+### Most Explosive (Highest Variance)
+
+| Song | N | Avg Trn | Range | Band |
+|------|---|---------|-------|------|
+| Goin' Against Your Mind | 11 | 60.5 | 36.3 | BTS |
+| Prince Caspian | 15 | 56.1 | 35.5 | PH |
+| Harpua | 6 | 59.8 | 31.4 | PH |
+| Chalk Dust Torture | 38 | 57.0 | 27.1 | PH |
+| Space | 18 | 58.7 | 26.0 | GD |
+| Broken Chairs | 10 | 59.1 | 26.0 | BTS |
+| Sand | 26 | 55.7 | 24.2 | PH |
+| 2001 | 20 | 62.3 | 23.7 | PH |
+| Down With Disease | 28 | 60.5 | 20.8 | PH |
+
+Built to Spill's Goin' Against Your Mind has the widest swing in the entire library (36.3 points) — some nights it's a tight 8-minute album cut, other nights a sprawling 12-minute guitar exploration. Phish dominates the explosive category with Harpua (a song that's literally a framework for whatever insanity Trey wants to put inside it), CDT, Prince Caspian, and Sand.
+
+### Most Consistent (Lowest Variance, High Floor)
+
+The *consistent* songs — Morning Dew, Stella Blue, Black Peter, Slave — don't appear on the explosive list because their range is small. They always deliver. These are songs with built-in emotional arcs that don't depend on whether the band is "on" that night.
+
+**Collection building insight**: If you want guaranteed transcendence, collect Morning Dew and Stella Blue performances. If you want to gamble on peak experiences, collect Dark Star and Chalk Dust Torture — the highs are higher but the lows are lower.
+
+---
+
+## 11. Top Segue Chains
+
+The greatest unbroken musical sequences in the library, detected by tracking `->` segue markers across consecutive tracks:
+
+### Top 10 Chains (3+ songs, sorted by transcendence)
+
+| Chain | Date | Len | Min | Trn | Imp |
+|-------|------|-----|-----|-----|-----|
+| Truckin' → Drums → The Other One → Stella Blue | 1972-08-22 | 4 | 51.8 | **67** | 56 |
+| Dark Star → Truckin' → Morning Dew | 1973-03-16 | 3 | 50.6 | **67** | 57 |
+| Dark Star → ... → Turn On Your Lovelight | 1969-04-21 | 7 | 106.5 | **67** | 58 |
+| Promised Land → GDTRFB → ... | 1974-06-28 | 3 | 42.4 | 66 | 59 |
+| Playin' → UJB → ... | 1973-11-17 | 5 | 48.9 | 65 | 37 |
+| Alligator → Lovelight → Caution → ... | 1968-06-14 | 4 | 42.9 | 65 | 47 |
+| WRS → ... (8-song marathon) | 1974-06-18 | 8 | 95.7 | 62 | 50 |
+| Est. Prophet → ... (11-song set) | 1978-07-08 | 11 | 124.1 | 62 | 35 |
+
+The 8/22/72 chain's centerpiece: The Other One (29.5 min, trn=73, imp=79, bld=76) followed by Stella Blue (10.1 min, trn=73, bld=75). Two 73-transcendence tracks in one chain.
+
+### Best Phish Chain
+
+| Chain | Date | Len | Min | Trn |
+|-------|------|-----|-----|-----|
+| 2001 → Mike's → Weekapaug → Character Zero | 1998-07-17 | 4 | 64.5 | **69** |
+
+Star Lake '98, night 1. The 2001 alone: 24.2 min, trn=75, bld=74, imp=67. A space-jam odyssey scoring in the 99th percentile.
 
 ---
 

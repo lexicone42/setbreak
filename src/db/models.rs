@@ -348,6 +348,7 @@ pub struct TransitionRecord {
 pub struct TrackScore {
     pub title: String,
     pub date: String,
+    pub file_path: String,
     pub duration_min: f64,
     pub key: Option<String>,
     pub tempo: Option<f64>,
@@ -380,6 +381,8 @@ pub struct ChainScore {
     pub transcendence: f64,
     pub valence: f64,
     pub arousal: f64,
+    /// Individual track scores for verbose display
+    pub tracks: Vec<TrackScore>,
 }
 
 impl ChainScore {
@@ -414,6 +417,7 @@ impl ChainScore {
             transcendence: wavg(|t| t.transcendence),
             valence: wavg(|t| t.valence),
             arousal: wavg(|t| t.arousal),
+            tracks: tracks.to_vec(),
         }
     }
 

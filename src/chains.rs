@@ -94,6 +94,7 @@ mod tests {
         TrackScore {
             title: title.to_string(),
             date: "1977-05-08".to_string(),
+            file_path: String::new(),
             duration_min,
             key: None,
             tempo: None,
@@ -206,6 +207,7 @@ mod tests {
                 energy: 50.0, intensity: 50.0, groove: 50.0, improvisation: 50.0,
                 tightness: 50.0, build_quality: 50.0, exploratory: 50.0,
                 transcendence: 70.0, valence: 50.0, arousal: 50.0,
+                tracks: vec![],
             },
             ChainScore {
                 date: "1977-05-08".into(),
@@ -214,6 +216,7 @@ mod tests {
                 energy: 50.0, intensity: 50.0, groove: 50.0, improvisation: 50.0,
                 tightness: 50.0, build_quality: 50.0, exploratory: 50.0,
                 transcendence: 90.0, valence: 50.0, arousal: 50.0,
+                tracks: vec![],
             },
         ];
 
