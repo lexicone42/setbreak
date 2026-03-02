@@ -10,6 +10,105 @@ fn has_segue_marker(title: &str) -> bool {
         || t.ends_with(" >")
 }
 
+/// Detect segue chains using canonical setlist data as the authoritative source.
+///
+/// `setlist` is a list of (song_name, segued, set_num, position) from the setlists table.
+/// For each track, looks up the matching setlist entry by song name to determine if it segued.
+/// Falls back to filename-marker detection for tracks that can't be matched.
+///
+/// Handles multiple recordings of the same show (different tapes share the same date)
+/// by matching on song name rather than positional index.
+pub fn detect_chains_with_setlist(
+    tracks: &[TrackScore],
+    setlist: &[(String, bool, i32, i32)],
+    min_length: usize,
+) -> Vec<ChainScore> {
+    // Build a lookup: normalized song name → segued boolean.
+    // For songs that appear multiple times in a setlist (e.g., St. Stephen reprise),
+    // track each occurrence's segue status separately.
+    let setlist_entries: Vec<(&str, bool)> = setlist
+        .iter()
+        .map(|(name, segued, _, _)| (name.as_str(), *segued))
+        .collect();
+
+    let mut chains = Vec::new();
+    let mut current_chain: Vec<&TrackScore> = Vec::new();
+
+    for track in tracks {
+        let prev_segued = if current_chain.is_empty() {
+            false
+        } else {
+            let prev = current_chain.last().unwrap();
+            lookup_segue(&prev.title, &setlist_entries)
+                .unwrap_or_else(|| has_segue_marker(&prev.title))
+        };
+
+        if current_chain.is_empty() {
+            current_chain.push(track);
+        } else if prev_segued {
+            current_chain.push(track);
+        } else {
+            if current_chain.len() >= min_length {
+                chains.push(ChainScore::from_tracks(
+                    &current_chain.iter().copied().cloned().collect::<Vec<_>>(),
+                ));
+            }
+            current_chain.clear();
+            current_chain.push(track);
+        }
+    }
+
+    if current_chain.len() >= min_length {
+        chains.push(ChainScore::from_tracks(
+            &current_chain.iter().copied().cloned().collect::<Vec<_>>(),
+        ));
+    }
+
+    chains
+}
+
+/// Look up whether a track segued, using matching against setlist entries.
+/// Returns None if no match found (caller should fall back to filename markers).
+fn lookup_segue(title: &str, setlist: &[(&str, bool)]) -> Option<bool> {
+    let clean = strip_segue_suffix(title).to_lowercase();
+
+    // Skip empty/untitled tracks — can't match these meaningfully
+    if clean.is_empty() || clean == "(untitled)" {
+        return None;
+    }
+
+    // Exact match (case-insensitive, ignoring segue markers)
+    for (name, segued) in setlist {
+        if name.to_lowercase() == clean {
+            return Some(*segued);
+        }
+    }
+
+    // Relaxed match: track title contains setlist name or vice versa,
+    // but require at least 4 characters to avoid spurious matches.
+    if clean.len() >= 4 {
+        for (name, segued) in setlist {
+            let sl = name.to_lowercase();
+            if clean.contains(&sl) || sl.contains(&clean) {
+                return Some(*segued);
+            }
+        }
+    }
+
+    None
+}
+
+/// Strip segue markers and common suffixes from a title for comparison.
+fn strip_segue_suffix(title: &str) -> &str {
+    let t = title.trim_end();
+    for marker in &[" -->", "-->", " ->", "->", " >", ">"] {
+        if let Some(stripped) = t.strip_suffix(marker) {
+            return stripped.trim_end();
+        }
+    }
+    t
+}
+
 /// Detect segue chains from an ordered list of tracks within a single show.
 /// Tracks must be pre-sorted by disc/track order.
 /// `min_length` is the minimum number of songs to form a chain (typically 2).
@@ -242,5 +341,62 @@ mod tests {
         ];
         let chains2 = detect_chains(&tracks2, 2);
         assert!((chains2[0].transcendence - 75.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_setlist_based_chain_detection() {
+        // Tracks WITHOUT segue markers in titles
+        let tracks = vec![
+            make_track("Scarlet Begonias", 8.0, 60.0),
+            make_track("Fire on the Mountain", 12.0, 80.0),
+            make_track("Estimated Prophet", 9.0, 55.0),
+        ];
+
+        // Without setlist data, no chains detected
+        let chains = detect_chains(&tracks, 2);
+        assert!(chains.is_empty());
+
+        // With setlist data indicating Scarlet segued into Fire
+        let setlist = vec![
+            ("Scarlet Begonias".into(), true, 2, 1),   // segued = true
+            ("Fire on the Mountain".into(), false, 2, 2), // segued = false
+            ("Estimated Prophet".into(), false, 2, 3),
+        ];
+
+        let chains = detect_chains_with_setlist(&tracks, &setlist, 2);
+        assert_eq!(chains.len(), 1);
+        assert_eq!(chains[0].chain_length, 2);
+        assert_eq!(chains[0].songs, vec!["Scarlet Begonias", "Fire on the Mountain"]);
+    }
+
+    #[test]
+    fn test_setlist_cornell_77() {
+        // Cornell 5/8/77 set 2: Scarlet > Fire, then St. Stephen > NFA > St. Stephen > Morning Dew
+        let tracks = vec![
+            make_track("Scarlet Begonias", 8.0, 70.0),
+            make_track("Fire On The Mountain", 12.0, 80.0),
+            make_track("Estimated Prophet", 15.0, 65.0),
+            make_track("Saint Stephen", 8.0, 85.0),
+            make_track("Not Fade Away", 6.0, 75.0),
+            make_track("Saint Stephen", 3.0, 80.0),
+            make_track("Morning Dew", 12.0, 95.0),
+        ];
+
+        let setlist = vec![
+            ("Scarlet Begonias".into(), true, 2, 1),
+            ("Fire On The Mountain".into(), false, 2, 2),
+            ("Estimated Prophet".into(), false, 2, 3),
+            ("Saint Stephen".into(), true, 2, 4),
+            ("Not Fade Away".into(), true, 2, 5),
+            ("Saint Stephen".into(), true, 2, 6),
+            ("Morning Dew".into(), false, 2, 7),
+        ];
+
+        let chains = detect_chains_with_setlist(&tracks, &setlist, 2);
+        assert_eq!(chains.len(), 2);
+        assert_eq!(chains[0].songs, vec!["Scarlet Begonias", "Fire On The Mountain"]);
+        assert_eq!(chains[1].chain_length, 4); // St. Stephen > NFA > St. Stephen > Morning Dew
+        assert_eq!(chains[1].songs[0], "Saint Stephen");
+        assert_eq!(chains[1].songs[3], "Morning Dew");
     }
 }

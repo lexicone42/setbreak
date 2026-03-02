@@ -101,8 +101,11 @@ impl Database {
         if version < 16 {
             self.migrate_v16()?;
         }
+        if version < 17 {
+            self.migrate_v17()?;
+        }
 
-        self.conn.pragma_update(None, "user_version", 16)?;
+        self.conn.pragma_update(None, "user_version", 17)?;
         Ok(())
     }
 
@@ -611,6 +614,34 @@ impl Database {
         try_add_column(&self.conn, "analysis_results", "dynamics_slope REAL")?;
         try_add_column(&self.conn, "analysis_results", "dynamics_peak_count INTEGER")?;
         try_add_column(&self.conn, "analysis_results", "key_change_count INTEGER")?;
+        Ok(())
+    }
+
+    /// V17: Canonical setlists table — song-level data with segue info.
+    /// Populated from gdshowsdb (Grateful Dead) and phish.in (Phish).
+    fn migrate_v17(&self) -> Result<()> {
+        self.conn.execute_batch(
+            "
+            CREATE TABLE IF NOT EXISTS setlists (
+                id       INTEGER PRIMARY KEY AUTOINCREMENT,
+                date     TEXT NOT NULL,
+                set_num  INTEGER NOT NULL,
+                position INTEGER NOT NULL,
+                song     TEXT NOT NULL,
+                segued   INTEGER NOT NULL DEFAULT 0,
+                venue    TEXT,
+                city     TEXT,
+                state    TEXT,
+                source   TEXT NOT NULL,
+
+                UNIQUE(date, set_num, position, source)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_setlists_date ON setlists(date);
+            CREATE INDEX IF NOT EXISTS idx_setlists_song ON setlists(song);
+            CREATE INDEX IF NOT EXISTS idx_setlists_source ON setlists(source);
+            "
+        )?;
         Ok(())
     }
 }

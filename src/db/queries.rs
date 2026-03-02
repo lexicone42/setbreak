@@ -1397,6 +1397,83 @@ impl Database {
         )?;
         Ok(())
     }
+
+    /// Get setlist entries for a given date, ordered by set and position.
+    /// Returns (song, segued, set_num, position) tuples.
+    pub fn get_setlist_for_date(&self, date: &str) -> Result<Vec<(String, bool, i32, i32)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT song, segued, set_num, position
+             FROM setlists
+             WHERE date = ?1
+             ORDER BY set_num, position"
+        )?;
+        let rows = stmt
+            .query_map(params![date], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, bool>(1)?,
+                    row.get::<_, i32>(2)?,
+                    row.get::<_, i32>(3)?,
+                ))
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    /// Check if setlist data exists for a given date.
+    pub fn has_setlist(&self, date: &str) -> Result<bool> {
+        let count: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM setlists WHERE date = ?1",
+            params![date],
+            |r| r.get(0),
+        )?;
+        Ok(count > 0)
+    }
+
+    /// Get all dates that have setlist data.
+    pub fn get_setlist_dates(&self) -> Result<Vec<String>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT DISTINCT date FROM setlists ORDER BY date"
+        )?;
+        let rows = stmt
+            .query_map([], |row| row.get::<_, String>(0))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    /// Get all dates that have segue chains — either from filename markers OR setlist data.
+    /// Union of the title-based detection with setlist-based segue booleans.
+    pub fn get_dates_with_chains_or_setlists(&self) -> Result<Vec<String>> {
+        let sql = format!(
+            "SELECT DISTINCT d FROM (
+                -- Dates with segue markers in track titles
+                SELECT t.parsed_date AS d
+                FROM tracks t
+                JOIN analysis_results a ON a.track_id = t.id
+                WHERE t.parsed_date IS NOT NULL
+                  AND {NOT_GARBAGE}
+                  AND (t.parsed_title LIKE '%->%'
+                       OR t.parsed_title LIKE '%--%>'
+                       OR t.parsed_title LIKE '%% >')
+                UNION
+                -- Dates with setlist segue data
+                SELECT s.date AS d
+                FROM setlists s
+                WHERE s.segued = 1
+                  AND EXISTS (
+                      SELECT 1 FROM tracks t
+                      JOIN analysis_results a ON a.track_id = t.id
+                      WHERE t.parsed_date = s.date
+                        AND {NOT_GARBAGE}
+                  )
+            ) ORDER BY d"
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let dates = stmt
+            .query_map([], |row| row.get(0))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(dates)
+    }
 }
 
 #[cfg(test)]

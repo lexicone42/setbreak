@@ -249,6 +249,20 @@ enum Commands {
         dry_run: bool,
     },
 
+    /// Import canonical setlists from gdshowsdb YAML files (Grateful Dead)
+    ImportSetlists {
+        /// Path to gdshowsdb data directory (contains year YAML files)
+        path: String,
+
+        /// Source identifier (default: gdshowsdb)
+        #[arg(long, default_value = "gdshowsdb")]
+        source: String,
+
+        /// Dry run — parse and validate without writing to DB
+        #[arg(long)]
+        dry_run: bool,
+    },
+
     /// Classify tracks as live, studio, or live_album (backfill existing tracks)
     Classify,
 
@@ -573,7 +587,7 @@ fn main() -> Result<()> {
                     return Ok(());
                 }
             } else {
-                db.get_dates_with_chains().context("Query failed")?
+                db.get_dates_with_chains_or_setlists().context("Query failed")?
             };
 
             if dates.is_empty() {
@@ -591,7 +605,7 @@ fn main() -> Result<()> {
                 }.to_string()
             });
 
-            // Collect chains from all dates
+            // Collect chains from all dates (prefer setlist segue data when available)
             let mut all_chains = Vec::new();
             for d in &dates {
                 let tracks = db.query_show(d).context("Query failed")?;
@@ -601,7 +615,13 @@ fn main() -> Result<()> {
                         continue;
                     }
                 }
-                let chains = setbreak::chains::detect_chains(&tracks, min_length);
+                // Use setlist segue data if available, else fall back to filename markers
+                let chains = match db.get_setlist_for_date(d) {
+                    Ok(setlist) if !setlist.is_empty() => {
+                        setbreak::chains::detect_chains_with_setlist(&tracks, &setlist, min_length)
+                    }
+                    _ => setbreak::chains::detect_chains(&tracks, min_length),
+                };
                 all_chains.extend(chains);
             }
 
@@ -733,6 +753,59 @@ fn main() -> Result<()> {
                         }
                     }
                 }
+            }
+        }
+
+        Commands::ImportSetlists { path, source, dry_run } => {
+            if dry_run {
+                println!("DRY RUN — no changes will be written to the database");
+            }
+
+            let data_path = std::path::Path::new(&path);
+            if !data_path.is_dir() {
+                anyhow::bail!("Not a directory: {}", path);
+            }
+
+            println!("Parsing setlist data from {}...", path);
+            let entries = setbreak::setlist::import::parse_gdshowsdb(data_path)
+                .context("Failed to parse setlist data")?;
+
+            let show_count = entries.iter()
+                .map(|e| &e.date)
+                .collect::<std::collections::HashSet<_>>()
+                .len();
+
+            println!("Parsed {} songs across {} shows", entries.len(), show_count);
+
+            if dry_run {
+                // Show a sample
+                let mut by_date: std::collections::BTreeMap<&str, Vec<&setbreak::setlist::import::SetlistEntry>> =
+                    std::collections::BTreeMap::new();
+                for e in &entries {
+                    by_date.entry(&e.date).or_default().push(e);
+                }
+
+                // Show last 3 dates as a sample
+                let sample: Vec<_> = by_date.iter().rev().take(3).collect();
+                for (date, songs) in sample.iter().rev() {
+                    println!("\n{date}:");
+                    let mut current_set = 0;
+                    for s in *songs {
+                        if s.set_num != current_set {
+                            current_set = s.set_num;
+                            println!("  Set {current_set}:");
+                        }
+                        let segue = if s.segued { " ->" } else { "" };
+                        println!("    {: >2}. {}{}", s.position, s.song, segue);
+                    }
+                }
+            } else {
+                let result = setbreak::setlist::import::import_setlists(&db, &entries, &source)
+                    .context("Failed to import setlists")?;
+                println!(
+                    "Import complete: {} shows, {} songs (source: {})",
+                    result.shows_imported, result.songs_imported, source
+                );
             }
         }
 
