@@ -1430,6 +1430,17 @@ impl Database {
         Ok(count > 0)
     }
 
+    /// Get all dates that have setlist data for a specific source.
+    pub fn get_setlist_dates_for_source(&self, source: &str) -> Result<Vec<String>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT DISTINCT date FROM setlists WHERE source = ?1 ORDER BY date"
+        )?;
+        let rows = stmt
+            .query_map(params![source], |row| row.get::<_, String>(0))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
     /// Get all dates that have setlist data.
     pub fn get_setlist_dates(&self) -> Result<Vec<String>> {
         let mut stmt = self.conn.prepare(

@@ -263,6 +263,13 @@ enum Commands {
         dry_run: bool,
     },
 
+    /// Fetch Phish setlists from phish.in API (incremental, caches in DB)
+    FetchPhishin {
+        /// Dry run — fetch and count but don't write to DB
+        #[arg(long)]
+        dry_run: bool,
+    },
+
     /// Classify tracks as live, studio, or live_album (backfill existing tracks)
     Classify,
 
@@ -807,6 +814,23 @@ fn main() -> Result<()> {
                     result.shows_imported, result.songs_imported, source
                 );
             }
+        }
+
+        Commands::FetchPhishin { dry_run } => {
+            if dry_run {
+                println!("DRY RUN — no changes will be written to the database");
+            }
+
+            let result = setbreak::setlist::phishin::fetch_phish_setlists(
+                &db,
+                config.archive.rate_limit_ms,
+                dry_run,
+            ).context("Failed to fetch Phish setlists from phish.in")?;
+
+            println!(
+                "Phish setlists: {} shows, {} songs imported",
+                result.shows_imported, result.songs_imported
+            );
         }
 
         Commands::Classify => {

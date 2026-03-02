@@ -1,4 +1,5 @@
 pub mod import;
+pub mod phishin;
 
 use std::collections::HashMap;
 use std::path::Path;

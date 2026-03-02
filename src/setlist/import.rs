@@ -162,6 +162,43 @@ pub fn import_setlists(db: &Database, entries: &[SetlistEntry], source: &str) ->
     })
 }
 
+/// Append setlist entries to the database without clearing existing data.
+/// Used for incremental imports (e.g., phish.in fetching show by show).
+/// Skips entries that would violate the UNIQUE constraint.
+pub fn import_setlists_append(db: &Database, entries: &[SetlistEntry]) -> Result<ImportResult> {
+    let tx = db.conn.unchecked_transaction()
+        .context("Failed to start transaction")?;
+
+    let mut stmt = tx.prepare(
+        "INSERT OR IGNORE INTO setlists (date, set_num, position, song, segued, venue, city, state, source)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)"
+    ).context("Failed to prepare insert statement")?;
+
+    let mut shows = std::collections::HashSet::new();
+    let mut songs = 0usize;
+
+    for e in entries {
+        let inserted = stmt.execute(rusqlite::params![
+            e.date, e.set_num, e.position, e.song, e.segued,
+            e.venue, e.city, e.state, e.source,
+        ]).with_context(|| format!("Failed to insert: {} {} set {} pos {}",
+            e.date, e.song, e.set_num, e.position))?;
+        if inserted > 0 {
+            shows.insert(e.date.clone());
+            songs += 1;
+        }
+    }
+
+    drop(stmt);
+    tx.commit().context("Failed to commit setlist import")?;
+
+    Ok(ImportResult {
+        shows_imported: shows.len(),
+        songs_imported: songs,
+        files_processed: 0,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
