@@ -472,6 +472,12 @@ pub fn extract(track_id: i64, r: &AnalysisResult) -> ExtractionResult {
         build_quality_score: None,
         exploratory_score: None,
         transcendence_score: None,
+
+        // Boundary features — populated by analyze_single_track from raw audio
+        tail_rms_db: None,
+        tail_silence_pct: None,
+        head_rms_db: None,
+        head_silence_pct: None,
     };
 
     ExtractionResult {

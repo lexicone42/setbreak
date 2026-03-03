@@ -294,6 +294,12 @@ pub struct NewAnalysis {
     pub build_quality_score: Option<f64>,
     pub exploratory_score: Option<f64>,
     pub transcendence_score: Option<f64>,
+
+    // Boundary features for segue detection (v18)
+    pub tail_rms_db: Option<f64>,
+    pub tail_silence_pct: Option<f64>,
+    pub head_rms_db: Option<f64>,
+    pub head_silence_pct: Option<f64>,
 }
 
 /// Chord event for relational storage.
@@ -477,4 +483,41 @@ pub struct CalibrationRow {
     pub scores: [Option<f64>; 10], // energy, intensity, groove, improv, tight, build, explor, trans, valence, arousal
     pub parsed_date: String,
     pub parsed_band: Option<String>,
+}
+
+/// A track row with boundary features for segue detection.
+pub struct SegueTrackRow {
+    pub track_id: i64,
+    pub parsed_date: String,
+    pub parsed_disc: Option<i32>,
+    pub parsed_set: Option<String>,
+    pub parsed_track: Option<i32>,
+    pub title: String,
+    pub tail_rms_db: f64,
+    pub tail_silence_pct: f64,
+    pub head_rms_db: f64,
+    pub head_silence_pct: f64,
+    pub duration: Option<f64>,
+    pub file_path: String,
+    pub parsed_band: Option<String>,
+}
+
+impl SegueTrackRow {
+    pub fn from_row(row: &rusqlite::Row) -> rusqlite::Result<Self> {
+        Ok(Self {
+            track_id: row.get(0)?,
+            parsed_date: row.get(1)?,
+            parsed_disc: row.get(2)?,
+            parsed_set: row.get(3)?,
+            parsed_track: row.get(4)?,
+            title: row.get(5)?,
+            tail_rms_db: row.get(6)?,
+            tail_silence_pct: row.get(7)?,
+            head_rms_db: row.get(8)?,
+            head_silence_pct: row.get(9)?,
+            duration: row.get(10)?,
+            file_path: row.get(11)?,
+            parsed_band: row.get(12)?,
+        })
+    }
 }

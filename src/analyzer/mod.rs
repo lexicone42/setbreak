@@ -1,3 +1,4 @@
+pub mod boundary;
 pub mod decode;
 pub mod features;
 pub mod jam_metrics;
@@ -215,6 +216,109 @@ pub fn analyze_tracks(
     Ok(AnalyzeResult { analyzed, failed })
 }
 
+/// Extract boundary features for tracks that don't have them yet.
+///
+/// This is a lightweight decode-only pass — no FFT, no ferrous-waves analysis.
+/// Just loads the audio and computes RMS/silence stats on head and tail regions.
+pub fn extract_boundaries(
+    db: &Database,
+    jobs: usize,
+) -> std::result::Result<AnalyzeResult, AnalyzeError> {
+    let tracks = db.get_tracks_missing_boundaries()?;
+
+    if tracks.is_empty() {
+        log::info!("All tracks already have boundary features");
+        return Ok(AnalyzeResult {
+            analyzed: 0,
+            failed: 0,
+        });
+    }
+
+    log::info!(
+        "Extracting boundary features for {} tracks with {} workers",
+        tracks.len(),
+        jobs
+    );
+
+    let pb = ProgressBar::new(tracks.len() as u64);
+    pb.set_style(
+        ProgressStyle::with_template(
+            "{spinner:.green} [{bar:40.cyan/blue}] {pos}/{len} ({eta}) {msg}",
+        )
+        .unwrap()
+        .progress_chars("#>-"),
+    );
+
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(jobs)
+        .build()
+        .unwrap();
+
+    let mut extracted: u64 = 0;
+    let mut failed: u64 = 0;
+    let chunk_size = jobs * 4; // Larger chunks since boundary extraction is fast
+
+    for chunk in tracks.chunks(chunk_size) {
+        let results: Vec<_> = pool.install(|| {
+            use rayon::prelude::*;
+            chunk
+                .par_iter()
+                .map(|track| {
+                    let result = extract_boundary_single(track);
+                    pb.inc(1);
+                    (track.id, track.file_path.clone(), result)
+                })
+                .collect()
+        });
+
+        for (track_id, file_path, result) in results {
+            match result {
+                Ok(bf) => {
+                    match db.update_boundary_features(
+                        track_id,
+                        bf.tail_rms_db,
+                        bf.tail_silence_pct,
+                        bf.head_rms_db,
+                        bf.head_silence_pct,
+                    ) {
+                        Ok(()) => extracted += 1,
+                        Err(e) => {
+                            log::error!("DB error for {}: {}", file_path, e);
+                            failed += 1;
+                        }
+                    }
+                }
+                Err(e) => {
+                    log::warn!("Decode failed for {}: {}", file_path, e);
+                    failed += 1;
+                }
+            }
+        }
+
+        pb.set_message(format!("{} stored, {} failed", extracted, failed));
+    }
+
+    pb.finish_with_message(format!("Done: {} extracted, {} failed", extracted, failed));
+
+    Ok(AnalyzeResult {
+        analyzed: extracted,
+        failed,
+    })
+}
+
+/// Decode a single track and extract boundary features.
+fn extract_boundary_single(
+    track: &Track,
+) -> std::result::Result<boundary::BoundaryFeatures, AnalyzeError> {
+    let path = Path::new(&track.file_path);
+    log::debug!(
+        "Boundary: {}",
+        path.file_name().and_then(|f| f.to_str()).unwrap_or("?")
+    );
+    let audio = decode::load_audio(path)?;
+    Ok(boundary::extract_from_audio(&audio))
+}
+
 // Thread-local tokio runtime — reused across tracks on the same rayon thread
 // to avoid the overhead of creating a runtime per-track.
 thread_local! {
@@ -260,8 +364,15 @@ fn analyze_single_track(track: &Track) -> std::result::Result<TrackAnalysis, Ana
         .with(|rt| rt.block_on(engine.analyze(&audio)))
         .map_err(|e| AnalyzeError::Engine(e.to_string()))?;
 
+    // Extract boundary features from raw audio (for segue detection)
+    let bf = boundary::extract_from_audio(&audio);
+
     // Extract all features into DB schema + detail records
     let mut extraction = features::extract(track.id, &analysis_result);
+    extraction.analysis.tail_rms_db = Some(bf.tail_rms_db);
+    extraction.analysis.tail_silence_pct = Some(bf.tail_silence_pct);
+    extraction.analysis.head_rms_db = Some(bf.head_rms_db);
+    extraction.analysis.head_silence_pct = Some(bf.head_silence_pct);
 
     // Compute jam-specific derived scores using the full analysis result
     jam_metrics::compute_jam_scores(&mut extraction.analysis, &analysis_result);

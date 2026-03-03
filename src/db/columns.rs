@@ -322,4 +322,10 @@ pub const ANALYSIS_SCHEMA: &[ColumnDef] = &[
     ColumnDef { name: "transcendence_score",  sql_type: "REAL", category: "Score", description: "Transcendence v3 jam score (0-100)" },
     ColumnDef { name: "valence_score",        sql_type: "REAL", category: "Score", description: "Valence v5 jam score (0-100)" },
     ColumnDef { name: "arousal_score",        sql_type: "REAL", category: "Score", description: "Arousal v3 jam score (0-100)" },
+
+    // ── Boundary features (v18) ─────────────────────────────────────
+    ColumnDef { name: "tail_rms_db",       sql_type: "REAL", category: "Boundary", description: "RMS of last 3s in dBFS (segue detection)" },
+    ColumnDef { name: "tail_silence_pct",  sql_type: "REAL", category: "Boundary", description: "Fraction of last 3s below -40 dBFS" },
+    ColumnDef { name: "head_rms_db",       sql_type: "REAL", category: "Boundary", description: "RMS of first 1s in dBFS (segue detection)" },
+    ColumnDef { name: "head_silence_pct",  sql_type: "REAL", category: "Boundary", description: "Fraction of first 1s below -40 dBFS" },
 ];

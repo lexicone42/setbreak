@@ -276,6 +276,36 @@ enum Commands {
     /// Flag tracks with bad audio quality (DTS bitstreams, corrupt files)
     QualityCheck,
 
+    /// Extract boundary features from audio (lightweight decode for segue detection)
+    ExtractBoundaries {
+        /// Number of parallel workers (0 = auto-detect from config)
+        #[arg(short = 'j', long, default_value = "0")]
+        jobs: usize,
+    },
+
+    /// Detect segues between consecutive tracks from audio boundary analysis
+    Segues {
+        /// Minimum segue confidence (0.0-1.0)
+        #[arg(long, default_value = "0.5")]
+        min_confidence: f64,
+
+        /// Filter by band (gd, phish, etc.)
+        #[arg(short, long)]
+        band: Option<String>,
+
+        /// Filter to a specific show date (YYYY-MM-DD)
+        #[arg(short, long)]
+        date: Option<String>,
+
+        /// Number of results
+        #[arg(short = 'n', long, default_value = "50")]
+        limit: usize,
+
+        /// Show all tracks in each show (not just detected segues)
+        #[arg(long)]
+        detail: bool,
+    },
+
     /// Run a raw SQL query against the database and display results
     Sql {
         /// SQL query to execute
@@ -895,6 +925,22 @@ fn main() -> Result<()> {
                 "Quality check complete: {} tracks — {} ok, {} suspect, {} garbage",
                 total, ok, suspect, garbage
             );
+        }
+
+        Commands::ExtractBoundaries { jobs } => {
+            let workers = if jobs > 0 { jobs } else { config.resolve_workers() };
+            let result = setbreak::analyzer::extract_boundaries(&db, workers)
+                .context("Boundary extraction failed")?;
+            println!(
+                "Boundary extraction complete: {} extracted, {} failed",
+                result.analyzed, result.failed
+            );
+        }
+
+        Commands::Segues { min_confidence, band, date, limit, detail } => {
+            setbreak::segues::run_segue_detection(
+                &db, min_confidence, band.as_deref(), date.as_deref(), limit, detail,
+            ).context("Segue detection failed")?;
         }
 
         Commands::Sql { query } => {

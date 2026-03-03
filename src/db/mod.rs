@@ -104,8 +104,11 @@ impl Database {
         if version < 17 {
             self.migrate_v17()?;
         }
+        if version < 18 {
+            self.migrate_v18()?;
+        }
 
-        self.conn.pragma_update(None, "user_version", 17)?;
+        self.conn.pragma_update(None, "user_version", 18)?;
         Ok(())
     }
 
@@ -642,6 +645,15 @@ impl Database {
             CREATE INDEX IF NOT EXISTS idx_setlists_source ON setlists(source);
             "
         )?;
+        Ok(())
+    }
+
+    /// V18: Boundary features for segue detection — RMS and silence at track head/tail.
+    fn migrate_v18(&self) -> Result<()> {
+        try_add_column(&self.conn, "analysis_results", "tail_rms_db REAL")?;
+        try_add_column(&self.conn, "analysis_results", "tail_silence_pct REAL")?;
+        try_add_column(&self.conn, "analysis_results", "head_rms_db REAL")?;
+        try_add_column(&self.conn, "analysis_results", "head_silence_pct REAL")?;
         Ok(())
     }
 }

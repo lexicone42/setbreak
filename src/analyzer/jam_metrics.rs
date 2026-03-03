@@ -928,6 +928,8 @@ mod tests {
             build_quality_score: None,
             exploratory_score: None,
             transcendence_score: None,
+            tail_rms_db: None, tail_silence_pct: None,
+            head_rms_db: None, head_silence_pct: None,
         }
     }
 

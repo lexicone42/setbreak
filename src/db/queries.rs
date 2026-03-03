@@ -1,7 +1,7 @@
 use super::columns::{map_track_score, LIVE_ONLY, NOT_GARBAGE, SCORE_COLUMNS, TRACK_SCORE_SELECT};
 use super::models::{
     ArchiveShow, CalibrationRow, ChordEvent, LibraryStats, NewAnalysis, NewTrack, SegmentRecord,
-    TensionPointRecord, Track, TrackScore, TransitionRecord,
+    SegueTrackRow, TensionPointRecord, Track, TrackScore, TransitionRecord,
 };
 use super::{Database, Result};
 use rusqlite::params;
@@ -266,6 +266,7 @@ impl Database {
                 exploratory_score, transcendence_score,
                 major_frame_ratio, major_chord_ratio,
                 dynamics_entropy, dynamics_slope, dynamics_peak_count, key_change_count,
+                tail_rms_db, tail_silence_pct, head_rms_db, head_silence_pct,
                 analyzed_at
             ) VALUES (
                 ?1,
@@ -336,6 +337,7 @@ impl Database {
                 ?182, ?183,
                 ?184, ?185,
                 ?186, ?187, ?188, ?189,
+                ?190, ?191, ?192, ?193,
                 datetime('now')
             )
             ON CONFLICT(track_id) DO UPDATE SET
@@ -514,6 +516,10 @@ impl Database {
                 dynamics_slope = excluded.dynamics_slope,
                 dynamics_peak_count = excluded.dynamics_peak_count,
                 key_change_count = excluded.key_change_count,
+                tail_rms_db = excluded.tail_rms_db,
+                tail_silence_pct = excluded.tail_silence_pct,
+                head_rms_db = excluded.head_rms_db,
+                head_silence_pct = excluded.head_silence_pct,
                 analyzed_at = datetime('now')
             ",
             params![
@@ -586,6 +592,7 @@ impl Database {
                 a.exploratory_score, a.transcendence_score,
                 a.major_frame_ratio, a.major_chord_ratio,
                 a.dynamics_entropy, a.dynamics_slope, a.dynamics_peak_count, a.key_change_count,
+                a.tail_rms_db, a.tail_silence_pct, a.head_rms_db, a.head_silence_pct,
             ],
         )?;
         Ok(())
@@ -760,6 +767,8 @@ impl Database {
                     groove_score: None, improvisation_score: None,
                     tightness_score: None, build_quality_score: None,
                     exploratory_score: None, transcendence_score: None,
+                    tail_rms_db: None, tail_silence_pct: None,
+                    head_rms_db: None, head_silence_pct: None,
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -1485,6 +1494,84 @@ impl Database {
             .collect::<std::result::Result<Vec<_>, _>>()?;
         Ok(dates)
     }
+
+    // ── Boundary features (segue detection) ──────────────────────────
+
+    /// Update boundary features for a single track.
+    pub fn update_boundary_features(
+        &self,
+        track_id: i64,
+        tail_rms_db: f64,
+        tail_silence_pct: f64,
+        head_rms_db: f64,
+        head_silence_pct: f64,
+    ) -> Result<()> {
+        self.conn.execute(
+            "UPDATE analysis_results SET
+                tail_rms_db = ?1, tail_silence_pct = ?2,
+                head_rms_db = ?3, head_silence_pct = ?4
+             WHERE track_id = ?5",
+            params![tail_rms_db, tail_silence_pct, head_rms_db, head_silence_pct, track_id],
+        )?;
+        Ok(())
+    }
+
+    /// Get analyzed tracks that are missing boundary features (for backfill).
+    pub fn get_tracks_missing_boundaries(&self) -> Result<Vec<Track>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT t.id, t.file_path, t.format, t.artist, t.parsed_band, t.parsed_date
+             FROM tracks t
+             JOIN analysis_results a ON a.track_id = t.id
+             WHERE a.tail_rms_db IS NULL
+             ORDER BY t.id",
+        )?;
+        let tracks = stmt
+            .query_map([], |row| {
+                Ok(Track {
+                    id: row.get(0)?,
+                    file_path: row.get(1)?,
+                    format: row.get(2)?,
+                    artist: row.get(3)?,
+                    parsed_band: row.get(4)?,
+                    parsed_date: row.get(5)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(tracks)
+    }
+
+    /// Get consecutive track pairs on the same date for segue detection.
+    /// Returns (track_id, parsed_date, parsed_disc, parsed_track, title,
+    ///          tail_rms_db, tail_silence_pct, head_rms_db, head_silence_pct, duration).
+    pub fn get_tracks_for_segue_detection(&self, band: Option<&str>) -> Result<Vec<SegueTrackRow>> {
+        let band_filter = if band.is_some() {
+            "AND t.parsed_band = ?1"
+        } else {
+            ""
+        };
+        let sql = format!(
+            "SELECT t.id, t.parsed_date, t.parsed_disc, t.parsed_set, t.parsed_track,
+                    COALESCE(t.parsed_title, t.title, '') as title,
+                    a.tail_rms_db, a.tail_silence_pct, a.head_rms_db, a.head_silence_pct,
+                    a.duration, t.file_path, t.parsed_band
+             FROM tracks t
+             JOIN analysis_results a ON a.track_id = t.id
+             WHERE t.parsed_date IS NOT NULL
+               AND a.tail_rms_db IS NOT NULL
+               AND {NOT_GARBAGE}
+               {band_filter}
+             ORDER BY t.parsed_date, t.parsed_disc, t.parsed_set, t.parsed_track, t.file_path"
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = if let Some(b) = band {
+            stmt.query_map(params![b], SegueTrackRow::from_row)?
+                .collect::<std::result::Result<Vec<_>, _>>()?
+        } else {
+            stmt.query_map([], SegueTrackRow::from_row)?
+                .collect::<std::result::Result<Vec<_>, _>>()?
+        };
+        Ok(rows)
+    }
 }
 
 #[cfg(test)]
@@ -1617,6 +1704,8 @@ mod tests {
             improvisation_score: None, tightness_score: None,
             build_quality_score: None, exploratory_score: None,
             transcendence_score: None,
+            tail_rms_db: None, tail_silence_pct: None,
+            head_rms_db: None, head_silence_pct: None,
         }
     }
 
