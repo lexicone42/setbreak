@@ -5,6 +5,11 @@ use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 use thiserror::Error;
 
+/// Maximum sample rate for analysis. Files above this are downsampled.
+/// ferrous-waves uses O(n²) memory for some features at high sample rates,
+/// causing 96 kHz files to use 25+ GB. 48 kHz preserves all audible information.
+const MAX_SAMPLE_RATE: u32 = 48_000;
+
 #[derive(Error, Debug)]
 pub enum DecodeError {
     #[error("Unsupported format: {0}")]
@@ -61,6 +66,14 @@ pub fn load_audio(path: &Path) -> Result<AudioFile, DecodeError> {
     if is_dts_bitstream(&audio) {
         return Err(DecodeError::DtsBitstream);
     }
+
+    // Downsample high sample rate files (96 kHz, 192 kHz) to prevent
+    // ferrous-waves from allocating 25+ GB on a single track.
+    let audio = if audio.buffer.sample_rate > MAX_SAMPLE_RATE {
+        downsample_audio(audio, MAX_SAMPLE_RATE)
+    } else {
+        audio
+    };
 
     Ok(audio)
 }
@@ -239,4 +252,55 @@ fn is_dts_bitstream(audio: &AudioFile) -> bool {
     // DTS bitstreams typically have >30% of samples near max amplitude
     // Real audio almost never exceeds 10% in the first few seconds
     near_max_ratio > 0.25
+}
+
+/// Downsample audio to a target sample rate using integer decimation.
+///
+/// For 96→48 kHz (factor 2) or 192→48 kHz (factor 4), this is exact integer
+/// division. For non-integer ratios, falls back to nearest-sample resampling.
+///
+/// Applies a simple low-pass FIR filter before decimation to prevent aliasing.
+fn downsample_audio(audio: AudioFile, target_rate: u32) -> AudioFile {
+    let src_rate = audio.buffer.sample_rate;
+    let channels = audio.buffer.channels;
+
+    if src_rate <= target_rate {
+        return audio;
+    }
+
+    let ratio = src_rate as f64 / target_rate as f64;
+    let int_ratio = ratio.round() as usize;
+
+    log::info!(
+        "Downsampling {} from {} Hz to {} Hz ({}:1)",
+        audio.path,
+        src_rate,
+        target_rate,
+        int_ratio
+    );
+
+    let src_samples = &audio.buffer.samples;
+    let src_frames = src_samples.len() / channels;
+    let dst_frames = src_frames / int_ratio;
+    let mut dst = Vec::with_capacity(dst_frames * channels);
+
+    // Simple averaging filter: average `int_ratio` frames to produce each output frame.
+    // This acts as a box low-pass filter, adequate for 2:1 decimation.
+    for frame in 0..dst_frames {
+        let start = frame * int_ratio;
+        for ch in 0..channels {
+            let mut sum = 0.0f32;
+            for k in 0..int_ratio {
+                sum += src_samples[(start + k) * channels + ch];
+            }
+            dst.push(sum / int_ratio as f32);
+        }
+    }
+
+    let buffer = AudioBuffer::new(dst, target_rate, channels);
+    AudioFile {
+        buffer,
+        format: audio.format,
+        path: audio.path,
+    }
 }

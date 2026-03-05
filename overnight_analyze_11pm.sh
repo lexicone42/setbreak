@@ -8,7 +8,7 @@ SETBREAK="./target/release/setbreak"
 DB_PATH="$HOME/.local/share/setbreak/setbreak.db"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 LOG_DIR="$SCRIPT_DIR/logs"
-JOBS=4
+JOBS=2  # 2 workers — 96kHz FLACs auto-downsampled to 48kHz, keeps memory bounded
 
 mkdir -p "$LOG_DIR"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
@@ -44,9 +44,20 @@ UNANALYZED=$(sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM tracks t LEFT JOIN analysi
 log "Tracks remaining to analyze: $UNANALYZED"
 
 # --- Launch analysis in background ---
-"$SETBREAK" analyze -j "$JOBS" --db-path "$DB_PATH" -v >> "$LOG_FILE" 2>&1 &
+RUST_LOG=info "$SETBREAK" analyze -j "$JOBS" --db-path "$DB_PATH" -v >> "$LOG_FILE" 2>&1 &
 ANALYZE_PID=$!
 log "Analysis started (PID $ANALYZE_PID)"
+
+# --- Memory monitor (log RSS every 5 min) ---
+(
+    while kill -0 "$ANALYZE_PID" 2>/dev/null; do
+        RSS_KB=$(ps -o rss= -p "$ANALYZE_PID" 2>/dev/null || echo "0")
+        RSS_MB=$((RSS_KB / 1024))
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Memory: ${RSS_MB} MB RSS" >> "$LOG_FILE"
+        sleep 300
+    done
+) &
+MONITOR_PID=$!
 
 # --- Schedule 8am kill ---
 STOP_TIME="tomorrow 08:00:00"
@@ -75,9 +86,11 @@ TIMER_PID=$!
 wait "$ANALYZE_PID" 2>/dev/null
 EXIT_CODE=$?
 
-# Clean up timer if analysis finished early
+# Clean up timer and monitor if analysis finished early
 kill "$TIMER_PID" 2>/dev/null || true
+kill "$MONITOR_PID" 2>/dev/null || true
 wait "$TIMER_PID" 2>/dev/null || true
+wait "$MONITOR_PID" 2>/dev/null || true
 
 # --- Post-run stats ---
 log "========================================"

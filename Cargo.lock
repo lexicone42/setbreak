@@ -2143,6 +2143,7 @@ dependencies = [
  "env_logger",
  "ferrous-waves",
  "indicatif",
+ "libc",
  "lofty",
  "log",
  "rayon",

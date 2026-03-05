@@ -162,8 +162,10 @@ pub fn analyze_tracks(
     let mut failed: u64 = 0;
 
     // Process in chunks: analyze chunk in parallel, write to DB, repeat.
-    // Chunk size = jobs * 2 gives good parallelism while keeping memory bounded.
-    let chunk_size = jobs * 2;
+    // Chunk size = jobs so only `jobs` tracks are in memory simultaneously.
+    // (Previously jobs*2, but large FLAC files use 1-2 GB per track in ferrous-waves,
+    //  and holding extra results while analyzing the next batch caused OOM on long runs.)
+    let chunk_size = jobs;
 
     for chunk in tracks.chunks(chunk_size) {
         // Analyze this chunk in parallel
@@ -208,7 +210,21 @@ pub fn analyze_tracks(
             }
         }
 
+        // Return freed memory to the OS. Without this, the system allocator holds onto
+        // large freed audio buffers (hundreds of MB per FLAC track), causing RSS to grow
+        // linearly across chunks until OOM on long overnight runs.
+        #[cfg(target_os = "linux")]
+        unsafe {
+            libc::malloc_trim(0);
+        }
+
         pb.set_message(format!("{} stored, {} failed", analyzed, failed));
+        log::info!(
+            "Chunk complete: {}/{} analyzed, {} failed",
+            analyzed,
+            tracks.len(),
+            failed
+        );
     }
 
     pb.finish_with_message(format!("Done: {} analyzed, {} failed", analyzed, failed));
@@ -366,6 +382,8 @@ fn analyze_single_track(track: &Track) -> std::result::Result<TrackAnalysis, Ana
 
     // Extract boundary features from raw audio (for segue detection)
     let bf = boundary::extract_from_audio(&audio);
+    // Drop raw audio ASAP — large FLAC tracks can use 500+ MB
+    drop(audio);
 
     // Extract all features into DB schema + detail records
     let mut extraction = features::extract(track.id, &analysis_result);
@@ -376,6 +394,9 @@ fn analyze_single_track(track: &Track) -> std::result::Result<TrackAnalysis, Ana
 
     // Compute jam-specific derived scores using the full analysis result
     jam_metrics::compute_jam_scores(&mut extraction.analysis, &analysis_result);
+    // Drop the full AnalysisResult — ferrous-waves retains spectrograms, pitch tracks,
+    // and per-frame features that can be 1-2 GB for long concert recordings.
+    drop(analysis_result);
 
     Ok(TrackAnalysis {
         track_id: track.id,
