@@ -3,8 +3,8 @@ pub mod decode;
 pub mod features;
 pub mod jam_metrics;
 
-use crate::db::models::Track;
 use crate::db::Database;
+use crate::db::models::Track;
 use features::ExtractionResult;
 use ferrous_waves::analysis::engine::{AnalysisConfig, AnalysisResult};
 use indicatif::{ProgressBar, ProgressStyle};
@@ -47,7 +47,10 @@ pub fn rescore_tracks(db: &Database) -> Result<RescoreResult, AnalyzeError> {
             .progress_chars("=>-"),
     );
 
-    let tx = db.conn.unchecked_transaction().map_err(|e| AnalyzeError::Db(e.into()))?;
+    let tx = db
+        .conn
+        .unchecked_transaction()
+        .map_err(|e| AnalyzeError::Db(e.into()))?;
 
     for a in &mut analyses {
         // Load segment energies for segment-level build quality scoring
@@ -84,10 +87,8 @@ pub fn classify_data_quality(
     let snr = snr_db.unwrap_or(60.0); // default to healthy if no data
     let clip = clipping_ratio.unwrap_or(0.0);
 
-    if snr < 5.0 {
-        "garbage" // DTS bitstreams produce ~0-3 dB SNR
-    } else if snr < 15.0 && clip > 0.05 {
-        "garbage" // low SNR + high clipping = corrupt
+    if snr < 5.0 || (snr < 15.0 && clip > 0.05) {
+        "garbage" // DTS bitstreams produce ~0-3 dB SNR; low SNR + high clipping = corrupt
     } else if snr < 20.0 {
         "suspect"
     } else {
@@ -95,10 +96,9 @@ pub fn classify_data_quality(
     }
 }
 
-
-
 /// Full result from analyzing a single track (before DB write).
 struct TrackAnalysis {
+    #[allow(dead_code)]
     track_id: i64,
     extraction: ExtractionResult,
 }
@@ -194,11 +194,7 @@ pub fn analyze_tracks(
                     ) {
                         Ok(()) => analyzed += 1,
                         Err(e) => {
-                            log::error!(
-                                "DB error storing analysis for {}: {}",
-                                file_path,
-                                e
-                            );
+                            log::error!("DB error storing analysis for {}: {}", file_path, e);
                             failed += 1;
                         }
                     }

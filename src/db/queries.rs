@@ -1,4 +1,4 @@
-use super::columns::{map_track_score, LIVE_ONLY, NOT_GARBAGE, SCORE_COLUMNS, TRACK_SCORE_SELECT};
+use super::columns::{LIVE_ONLY, NOT_GARBAGE, SCORE_COLUMNS, TRACK_SCORE_SELECT, map_track_score};
 use super::models::{
     ArchiveShow, CalibrationRow, ChordEvent, LibraryStats, NewAnalysis, NewTrack, SegmentRecord,
     SegueTrackRow, TensionPointRecord, Track, TrackScore, TransitionRecord,
@@ -50,11 +50,27 @@ impl Database {
                 updated_at = datetime('now')
             ",
             params![
-                t.file_path, t.file_size, t.file_modified, t.format,
-                t.title, t.artist, t.album, t.date, t.track_number, t.disc_number,
-                t.set_name, t.venue, t.comment,
-                t.parsed_band, t.parsed_date, t.parsed_venue, t.parsed_disc,
-                t.parsed_track, t.parsed_set, t.parsed_title, t.duration_secs,
+                t.file_path,
+                t.file_size,
+                t.file_modified,
+                t.format,
+                t.title,
+                t.artist,
+                t.album,
+                t.date,
+                t.track_number,
+                t.disc_number,
+                t.set_name,
+                t.venue,
+                t.comment,
+                t.parsed_band,
+                t.parsed_date,
+                t.parsed_venue,
+                t.parsed_disc,
+                t.parsed_track,
+                t.parsed_set,
+                t.parsed_title,
+                t.duration_secs,
                 t.recording_type,
             ],
         )?;
@@ -132,19 +148,37 @@ impl Database {
         Self::store_analysis_row(&tx, a)?;
 
         // Clear old detail rows (for re-analysis)
-        tx.execute("DELETE FROM track_chords WHERE track_id = ?1", params![a.track_id])?;
-        tx.execute("DELETE FROM track_segments WHERE track_id = ?1", params![a.track_id])?;
-        tx.execute("DELETE FROM track_tension_points WHERE track_id = ?1", params![a.track_id])?;
-        tx.execute("DELETE FROM track_transitions WHERE track_id = ?1", params![a.track_id])?;
+        tx.execute(
+            "DELETE FROM track_chords WHERE track_id = ?1",
+            params![a.track_id],
+        )?;
+        tx.execute(
+            "DELETE FROM track_segments WHERE track_id = ?1",
+            params![a.track_id],
+        )?;
+        tx.execute(
+            "DELETE FROM track_tension_points WHERE track_id = ?1",
+            params![a.track_id],
+        )?;
+        tx.execute(
+            "DELETE FROM track_transitions WHERE track_id = ?1",
+            params![a.track_id],
+        )?;
 
         // Batch insert chords
         if !chords.is_empty() {
             let mut stmt = tx.prepare_cached(
                 "INSERT INTO track_chords (track_id, chord, start_time, duration, confidence)
-                 VALUES (?1, ?2, ?3, ?4, ?5)"
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
             )?;
             for c in chords {
-                stmt.execute(params![c.track_id, c.chord, c.start_time, c.duration, c.confidence])?;
+                stmt.execute(params![
+                    c.track_id,
+                    c.chord,
+                    c.start_time,
+                    c.duration,
+                    c.confidence
+                ])?;
             }
         }
 
@@ -155,14 +189,27 @@ impl Database {
                     track_id, segment_index, label, section_type, start_time, duration,
                     energy, spectral_centroid, zcr, key, tempo, dynamic_range, confidence,
                     harmonic_stability, rhythmic_density, avg_brightness, dynamic_variation
-                 ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)"
+                 ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)",
             )?;
             for s in segments {
                 stmt.execute(params![
-                    s.track_id, s.segment_index, s.label, s.section_type,
-                    s.start_time, s.duration, s.energy, s.spectral_centroid, s.zcr,
-                    s.key, s.tempo, s.dynamic_range, s.confidence,
-                    s.harmonic_stability, s.rhythmic_density, s.avg_brightness, s.dynamic_variation,
+                    s.track_id,
+                    s.segment_index,
+                    s.label,
+                    s.section_type,
+                    s.start_time,
+                    s.duration,
+                    s.energy,
+                    s.spectral_centroid,
+                    s.zcr,
+                    s.key,
+                    s.tempo,
+                    s.dynamic_range,
+                    s.confidence,
+                    s.harmonic_stability,
+                    s.rhythmic_density,
+                    s.avg_brightness,
+                    s.dynamic_variation,
                 ])?;
             }
         }
@@ -171,7 +218,7 @@ impl Database {
         if !tension.is_empty() {
             let mut stmt = tx.prepare_cached(
                 "INSERT INTO track_tension_points (track_id, time, tension, change_type)
-                 VALUES (?1, ?2, ?3, ?4)"
+                 VALUES (?1, ?2, ?3, ?4)",
             )?;
             for t in tension {
                 stmt.execute(params![t.track_id, t.time, t.tension, t.change_type])?;
@@ -185,7 +232,13 @@ impl Database {
                  VALUES (?1, ?2, ?3, ?4, ?5)"
             )?;
             for t in transitions {
-                stmt.execute(params![t.track_id, t.time, t.transition_type, t.strength, t.duration])?;
+                stmt.execute(params![
+                    t.track_id,
+                    t.time,
+                    t.transition_type,
+                    t.strength,
+                    t.duration
+                ])?;
             }
         }
 
@@ -691,84 +744,145 @@ impl Database {
                     key_change_count: row.get(52)?,
                     rhythmic_periodicity_strength: row.get(53)?,
                     // Fields not needed for scoring — set to None/defaults
-                    sample_rate: None, channels: None, peak_amplitude: None,
-                    spectral_rolloff_mean: None, spectral_rolloff_std: None,
+                    sample_rate: None,
+                    channels: None,
+                    peak_amplitude: None,
+                    spectral_rolloff_mean: None,
+                    spectral_rolloff_std: None,
                     spectral_flatness_mean: None,
-                    spectral_bandwidth_mean: None, spectral_bandwidth_std: None,
-                    sub_band_mid_mean: None, sub_band_mid_std: None,
-                    sub_band_high_mean: None, sub_band_high_std: None,
-                    sub_band_presence_mean: None, sub_band_presence_std: None,
-                    mfcc_0_mean: None, mfcc_0_std: None,
-                    mfcc_1_mean: None, mfcc_1_std: None,
-                    mfcc_2_mean: None, mfcc_2_std: None,
-                    mfcc_3_mean: None, mfcc_3_std: None,
-                    mfcc_4_mean: None, mfcc_4_std: None,
-                    mfcc_5_mean: None, mfcc_5_std: None,
-                    mfcc_6_mean: None, mfcc_6_std: None,
-                    mfcc_7_mean: None, mfcc_7_std: None,
-                    mfcc_8_mean: None, mfcc_8_std: None,
-                    mfcc_9_mean: None, mfcc_9_std: None,
-                    mfcc_10_mean: None, mfcc_10_std: None,
-                    mfcc_11_mean: None, mfcc_11_std: None,
-                    mfcc_12_mean: None, mfcc_12_std: None,
-                    rhythmic_complexity: None, mean_pitch: None,
+                    spectral_bandwidth_mean: None,
+                    spectral_bandwidth_std: None,
+                    sub_band_mid_mean: None,
+                    sub_band_mid_std: None,
+                    sub_band_high_mean: None,
+                    sub_band_high_std: None,
+                    sub_band_presence_mean: None,
+                    sub_band_presence_std: None,
+                    mfcc_0_mean: None,
+                    mfcc_0_std: None,
+                    mfcc_1_mean: None,
+                    mfcc_1_std: None,
+                    mfcc_2_mean: None,
+                    mfcc_2_std: None,
+                    mfcc_3_mean: None,
+                    mfcc_3_std: None,
+                    mfcc_4_mean: None,
+                    mfcc_4_std: None,
+                    mfcc_5_mean: None,
+                    mfcc_5_std: None,
+                    mfcc_6_mean: None,
+                    mfcc_6_std: None,
+                    mfcc_7_mean: None,
+                    mfcc_7_std: None,
+                    mfcc_8_mean: None,
+                    mfcc_8_std: None,
+                    mfcc_9_mean: None,
+                    mfcc_9_std: None,
+                    mfcc_10_mean: None,
+                    mfcc_10_std: None,
+                    mfcc_11_mean: None,
+                    mfcc_11_std: None,
+                    mfcc_12_mean: None,
+                    mfcc_12_std: None,
+                    rhythmic_complexity: None,
+                    mean_pitch: None,
                     dominant_pitch: None,
-                    vibrato_presence: None, vibrato_rate: None,
+                    vibrato_presence: None,
+                    vibrato_rate: None,
                     true_peak_dbfs: None,
                     chord_change_rate: None,
-                    time_sig_numerator: None, time_sig_denominator: None,
+                    time_sig_numerator: None,
+                    time_sig_denominator: None,
                     chroma_vector: None,
-                    recording_quality_score: None, snr_db: None,
-                    clipping_ratio: None, noise_floor_db: None,
+                    recording_quality_score: None,
+                    snr_db: None,
+                    clipping_ratio: None,
+                    noise_floor_db: None,
                     temporal_complexity: None,
-                    repetition_count: None, solo_section_ratio: None,
-                    classification_music_score: None, hnr: None,
-                    loudness_std: None, peak_loudness: None,
-                    spectral_flux_skewness: None, spectral_centroid_slope: None,
+                    repetition_count: None,
+                    solo_section_ratio: None,
+                    classification_music_score: None,
+                    hnr: None,
+                    loudness_std: None,
+                    peak_loudness: None,
+                    spectral_flux_skewness: None,
+                    spectral_centroid_slope: None,
                     energy_buildup_ratio: None,
-                    bass_treble_ratio_mean: None, bass_treble_ratio_std: None,
-                    onset_density_std: None, loudness_buildup_slope: None,
+                    bass_treble_ratio_mean: None,
+                    bass_treble_ratio_std: None,
+                    onset_density_std: None,
+                    loudness_buildup_slope: None,
                     peak_energy_time: None,
-                    pitch_contour_std: None, pitch_clarity_mean: None,
+                    pitch_contour_std: None,
+                    pitch_clarity_mean: None,
                     pitched_frame_ratio: None,
-                    mfcc_flux_mean: None, onset_interval_entropy: None,
+                    mfcc_flux_mean: None,
+                    onset_interval_entropy: None,
                     spectral_centroid_kurtosis: None,
-                    bass_energy_slope: None, spectral_bandwidth_slope: None,
+                    bass_energy_slope: None,
+                    spectral_bandwidth_slope: None,
                     loudness_dynamic_spread: None,
                     beat_regularity: None,
-                    peak_tension: None, tension_range: None,
-                    energy_peak_count: None, energy_valley_depth_mean: None,
+                    peak_tension: None,
+                    tension_range: None,
+                    energy_peak_count: None,
+                    energy_valley_depth_mean: None,
                     spectral_loudness_correlation: None,
-                    spectral_skewness_mean: None, spectral_kurtosis_mean: None,
-                    spectral_entropy_mean: None, spectral_entropy_std: None,
-                    spectral_slope_mean: None, spectral_contrast_json: None,
-                    sub_band_flux_bass_mean: None, sub_band_flux_bass_std: None,
-                    sub_band_flux_mid_mean: None, sub_band_flux_high_mean: None,
-                    tonnetz_json: None, tonnetz_flux_mean: None, chroma_flux_mean: None,
-                    beat_pattern_json: None, syncopation: None,
-                    pulse_clarity: None, offbeat_ratio: None,
-                    spectral_spread_mean: None, spectral_spread_std: None,
+                    spectral_skewness_mean: None,
+                    spectral_kurtosis_mean: None,
+                    spectral_entropy_mean: None,
+                    spectral_entropy_std: None,
+                    spectral_slope_mean: None,
+                    spectral_contrast_json: None,
+                    sub_band_flux_bass_mean: None,
+                    sub_band_flux_bass_std: None,
+                    sub_band_flux_mid_mean: None,
+                    sub_band_flux_high_mean: None,
+                    tonnetz_json: None,
+                    tonnetz_flux_mean: None,
+                    chroma_flux_mean: None,
+                    beat_pattern_json: None,
+                    syncopation: None,
+                    pulse_clarity: None,
+                    offbeat_ratio: None,
+                    spectral_spread_mean: None,
+                    spectral_spread_std: None,
                     spectral_crest_std: None,
                     roughness_std: None,
-                    mfcc_delta_mean_json: None, mfcc_delta_delta_mean_json: None,
-                    stereo_width_mean: None, stereo_width_std: None,
-                    attack_time_mean: None, attack_time_std: None,
-                    decay_time_mean: None, decay_time_std: None,
+                    mfcc_delta_mean_json: None,
+                    mfcc_delta_delta_mean_json: None,
+                    stereo_width_mean: None,
+                    stereo_width_std: None,
+                    attack_time_mean: None,
+                    attack_time_std: None,
+                    decay_time_mean: None,
+                    decay_time_std: None,
                     onset_strength_std: None,
                     onset_strength_skewness: None,
-                    swing_ratio: None, microtiming_deviation_mean: None,
-                    microtiming_deviation_std: None, microtiming_bias: None,
+                    swing_ratio: None,
+                    microtiming_deviation_mean: None,
+                    microtiming_deviation_std: None,
+                    microtiming_bias: None,
                     temporal_modulation_json: None,
                     chroma_self_similarity_bandwidth: None,
-                    spectral_contrast_slope: None, spectral_contrast_range: None,
-                    onset_strength_contour_json: None, section_diversity_score: None,
-                    valence_score: None, arousal_score: None,
-                    energy_score: None, intensity_score: None,
-                    groove_score: None, improvisation_score: None,
-                    tightness_score: None, build_quality_score: None,
-                    exploratory_score: None, transcendence_score: None,
-                    tail_rms_db: None, tail_silence_pct: None,
-                    head_rms_db: None, head_silence_pct: None,
+                    spectral_contrast_slope: None,
+                    spectral_contrast_range: None,
+                    onset_strength_contour_json: None,
+                    section_diversity_score: None,
+                    valence_score: None,
+                    arousal_score: None,
+                    energy_score: None,
+                    intensity_score: None,
+                    groove_score: None,
+                    improvisation_score: None,
+                    tightness_score: None,
+                    build_quality_score: None,
+                    exploratory_score: None,
+                    transcendence_score: None,
+                    tail_rms_db: None,
+                    tail_silence_pct: None,
+                    head_rms_db: None,
+                    head_silence_pct: None,
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -785,10 +899,16 @@ impl Database {
                 valence_score = ?9, arousal_score = ?10
              WHERE track_id = ?11",
             params![
-                a.energy_score, a.intensity_score, a.groove_score,
-                a.improvisation_score, a.tightness_score, a.build_quality_score,
-                a.exploratory_score, a.transcendence_score,
-                a.valence_score, a.arousal_score,
+                a.energy_score,
+                a.intensity_score,
+                a.groove_score,
+                a.improvisation_score,
+                a.tightness_score,
+                a.build_quality_score,
+                a.exploratory_score,
+                a.transcendence_score,
+                a.valence_score,
+                a.arousal_score,
                 a.track_id,
             ],
         )?;
@@ -855,7 +975,7 @@ impl Database {
             params_vec.iter().map(|p| p.as_ref()).collect();
         let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt
-            .query_map(params_refs.as_slice(), |row| map_track_score(row))?
+            .query_map(params_refs.as_slice(), map_track_score)?
             .collect::<std::result::Result<Vec<_>, _>>()?;
         Ok(rows)
     }
@@ -874,7 +994,11 @@ impl Database {
             "duration"
         };
 
-        let live_filter = if live_only { format!("AND {LIVE_ONLY}") } else { String::new() };
+        let live_filter = if live_only {
+            format!("AND {LIVE_ONLY}")
+        } else {
+            String::new()
+        };
         let sql = format!(
             "SELECT {TRACK_SCORE_SELECT}
              FROM analysis_results a
@@ -889,7 +1013,7 @@ impl Database {
         let pattern = format!("%{song}%");
         let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt
-            .query_map(params![pattern, limit as i64], |row| map_track_score(row))?
+            .query_map(params![pattern, limit as i64], map_track_score)?
             .collect::<std::result::Result<Vec<_>, _>>()?;
         Ok(rows)
     }
@@ -908,7 +1032,7 @@ impl Database {
         let mut stmt = self.conn.prepare(&sql)?;
 
         let rows = stmt
-            .query_map(params![date], |row| map_track_score(row))?
+            .query_map(params![date], map_track_score)?
             .collect::<std::result::Result<Vec<_>, _>>()?;
         Ok(rows)
     }
@@ -947,7 +1071,7 @@ impl Database {
                 COALESCE(zcr_mean, 0), COALESCE(zcr_std, 0),
                 -- Tempo (1 dim)
                 COALESCE(tempo_bpm, 0)
-             FROM analysis_results"
+             FROM analysis_results",
         )?;
 
         let dim = 47; // 26 + 10 + 8 + 2 + 1
@@ -971,7 +1095,7 @@ impl Database {
 
         let mut stmt = tx.prepare_cached(
             "INSERT INTO track_similarity (track_id, similar_track_id, distance, rank)
-             VALUES (?1, ?2, ?3, ?4)"
+             VALUES (?1, ?2, ?3, ?4)",
         )?;
 
         for &(track_id, similar_id, distance, rank) in similarities {
@@ -1006,7 +1130,11 @@ impl Database {
     }
 
     /// Find a track ID by song title and optional date.
-    pub fn find_track_id(&self, song: &str, date: Option<&str>) -> Result<Option<(i64, String, String)>> {
+    pub fn find_track_id(
+        &self,
+        song: &str,
+        date: Option<&str>,
+    ) -> Result<Option<(i64, String, String)>> {
         let pattern = format!("%{song}%");
         let sql = if date.is_some() {
             format!(
@@ -1030,8 +1158,8 @@ impl Database {
             )
         };
 
-        let result = if date.is_some() {
-            self.conn.query_row(&sql, params![pattern, date.unwrap()], |row| {
+        let result = if let Some(d) = date {
+            self.conn.query_row(&sql, params![pattern, d], |row| {
                 Ok((row.get(0)?, row.get(1)?, row.get(2)?))
             })
         } else {
@@ -1049,17 +1177,15 @@ impl Database {
 
     /// Get library statistics.
     pub fn stats(&self) -> Result<LibraryStats> {
-        let total_tracks: i64 = self.conn.query_row(
-            "SELECT COUNT(*) FROM tracks",
-            [],
-            |row| row.get(0),
-        )?;
+        let total_tracks: i64 = self
+            .conn
+            .query_row("SELECT COUNT(*) FROM tracks", [], |row| row.get(0))?;
 
-        let analyzed_tracks: i64 = self.conn.query_row(
-            "SELECT COUNT(*) FROM analysis_results",
-            [],
-            |row| row.get(0),
-        )?;
+        let analyzed_tracks: i64 =
+            self.conn
+                .query_row("SELECT COUNT(*) FROM analysis_results", [], |row| {
+                    row.get(0)
+                })?;
 
         let total_duration_hours: f64 = self.conn.query_row(
             "SELECT COALESCE(SUM(duration), 0.0) / 3600.0 FROM analysis_results",
@@ -1167,13 +1293,17 @@ impl Database {
         let mut stmt = tx.prepare_cached(
             "INSERT OR REPLACE INTO archive_shows
                 (identifier, collection, date, title, source_quality, format_quality, fetched_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, datetime('now'))"
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, datetime('now'))",
         )?;
 
         for s in shows {
             stmt.execute(params![
-                s.identifier, s.collection, s.date, s.title,
-                s.source_quality, s.format_quality,
+                s.identifier,
+                s.collection,
+                s.date,
+                s.title,
+                s.source_quality,
+                s.format_quality,
             ])?;
         }
         drop(stmt);
@@ -1229,7 +1359,7 @@ impl Database {
             "SELECT identifier, collection, date, title, source_quality, format_quality
              FROM archive_shows
              WHERE collection = ?1
-             ORDER BY date"
+             ORDER BY date",
         )?;
 
         let shows = stmt
@@ -1257,7 +1387,7 @@ impl Database {
         let mut stmt = self.conn.prepare(
             "SELECT DISTINCT parsed_date FROM tracks
              WHERE parsed_band = ?1 AND parsed_date IS NOT NULL
-             ORDER BY parsed_date"
+             ORDER BY parsed_date",
         )?;
 
         let dates = stmt
@@ -1276,7 +1406,7 @@ impl Database {
             "SELECT identifier, collection, date, title, source_quality, format_quality
              FROM archive_shows
              WHERE collection = ?1 AND date = ?2
-             ORDER BY source_quality DESC, format_quality DESC"
+             ORDER BY source_quality DESC, format_quality DESC",
         )?;
 
         let shows = stmt
@@ -1295,7 +1425,12 @@ impl Database {
     }
 
     /// Check if a file path already exists and hasn't changed (same size+mtime).
-    pub fn track_unchanged(&self, file_path: &str, file_size: i64, file_modified: &str) -> Result<bool> {
+    pub fn track_unchanged(
+        &self,
+        file_path: &str,
+        file_size: i64,
+        file_modified: &str,
+    ) -> Result<bool> {
         let result: std::result::Result<(i64, String), _> = self.conn.query_row(
             "SELECT file_size, file_modified FROM tracks WHERE file_path = ?1",
             params![file_path],
@@ -1351,17 +1486,15 @@ impl Database {
 
     /// Get all tracks for recording type classification backfill.
     /// Returns (id, file_path, parsed_date, album).
-    pub fn get_tracks_for_classify(&self) -> Result<Vec<(i64, String, Option<String>, Option<String>)>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, file_path, parsed_date, album FROM tracks"
-        )?;
+    #[allow(clippy::type_complexity)]
+    pub fn get_tracks_for_classify(
+        &self,
+    ) -> Result<Vec<(i64, String, Option<String>, Option<String>)>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, file_path, parsed_date, album FROM tracks")?;
         let rows = stmt.query_map([], |row| {
-            Ok((
-                row.get(0)?,
-                row.get(1)?,
-                row.get(2)?,
-                row.get(3)?,
-            ))
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
         })?;
         rows.collect::<std::result::Result<Vec<_>, _>>()
             .map_err(Into::into)
@@ -1378,11 +1511,14 @@ impl Database {
 
     /// Get all analyzed tracks with their SNR and clipping data for quality classification.
     /// Returns (track_id, file_path, snr_db, clipping_ratio).
-    pub fn get_tracks_for_quality_check(&self) -> Result<Vec<(i64, String, Option<f64>, Option<f64>)>> {
+    #[allow(clippy::type_complexity)]
+    pub fn get_tracks_for_quality_check(
+        &self,
+    ) -> Result<Vec<(i64, String, Option<f64>, Option<f64>)>> {
         let mut stmt = self.conn.prepare(
             "SELECT t.id, t.file_path, a.snr_db, a.clipping_ratio
              FROM tracks t
-             JOIN analysis_results a ON a.track_id = t.id"
+             JOIN analysis_results a ON a.track_id = t.id",
         )?;
 
         let rows = stmt
@@ -1414,7 +1550,7 @@ impl Database {
             "SELECT song, segued, set_num, position
              FROM setlists
              WHERE date = ?1
-             ORDER BY set_num, position"
+             ORDER BY set_num, position",
         )?;
         let rows = stmt
             .query_map(params![date], |row| {
@@ -1441,9 +1577,9 @@ impl Database {
 
     /// Get all dates that have setlist data for a specific source.
     pub fn get_setlist_dates_for_source(&self, source: &str) -> Result<Vec<String>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT DISTINCT date FROM setlists WHERE source = ?1 ORDER BY date"
-        )?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT DISTINCT date FROM setlists WHERE source = ?1 ORDER BY date")?;
         let rows = stmt
             .query_map(params![source], |row| row.get::<_, String>(0))?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -1452,9 +1588,9 @@ impl Database {
 
     /// Get all dates that have setlist data.
     pub fn get_setlist_dates(&self) -> Result<Vec<String>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT DISTINCT date FROM setlists ORDER BY date"
-        )?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT DISTINCT date FROM setlists ORDER BY date")?;
         let rows = stmt
             .query_map([], |row| row.get::<_, String>(0))?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -1511,7 +1647,13 @@ impl Database {
                 tail_rms_db = ?1, tail_silence_pct = ?2,
                 head_rms_db = ?3, head_silence_pct = ?4
              WHERE track_id = ?5",
-            params![tail_rms_db, tail_silence_pct, head_rms_db, head_silence_pct, track_id],
+            params![
+                tail_rms_db,
+                tail_silence_pct,
+                head_rms_db,
+                head_silence_pct,
+                track_id
+            ],
         )?;
         Ok(())
     }
@@ -1612,100 +1754,195 @@ mod tests {
             duration: Some(300.0),
             sample_rate: Some(44100),
             channels: Some(2),
-            peak_amplitude: None, rms_level: None, dynamic_range: None,
-            spectral_centroid_mean: None, spectral_centroid_std: None,
-            spectral_flux_mean: None, spectral_flux_std: None,
-            spectral_rolloff_mean: None, spectral_rolloff_std: None,
-            spectral_flatness_mean: None, spectral_flatness_std: None,
-            spectral_bandwidth_mean: None, spectral_bandwidth_std: None,
-            zcr_mean: None, zcr_std: None,
-            sub_band_bass_mean: None, sub_band_bass_std: None,
-            sub_band_mid_mean: None, sub_band_mid_std: None,
-            sub_band_high_mean: None, sub_band_high_std: None,
-            sub_band_presence_mean: None, sub_band_presence_std: None,
-            mfcc_0_mean: None, mfcc_0_std: None,
-            mfcc_1_mean: None, mfcc_1_std: None,
-            mfcc_2_mean: None, mfcc_2_std: None,
-            mfcc_3_mean: None, mfcc_3_std: None,
-            mfcc_4_mean: None, mfcc_4_std: None,
-            mfcc_5_mean: None, mfcc_5_std: None,
-            mfcc_6_mean: None, mfcc_6_std: None,
-            mfcc_7_mean: None, mfcc_7_std: None,
-            mfcc_8_mean: None, mfcc_8_std: None,
-            mfcc_9_mean: None, mfcc_9_std: None,
-            mfcc_10_mean: None, mfcc_10_std: None,
-            mfcc_11_mean: None, mfcc_11_std: None,
-            mfcc_12_mean: None, mfcc_12_std: None,
-            tempo_bpm: None, beat_count: None, onset_count: None,
-            tempo_stability: None, rhythmic_complexity: None,
-            mean_pitch: None, pitch_range_low: None, pitch_range_high: None,
-            pitch_stability: None, dominant_pitch: None,
-            vibrato_presence: None, vibrato_rate: None, pitch_confidence_mean: None,
-            lufs_integrated: None, loudness_range: None, true_peak_dbfs: None,
-            crest_factor: None, energy_level: None,
-            estimated_key: None, key_confidence: None, tonality: None,
-            harmonic_complexity: None, chord_count: None, chord_change_rate: None,
-            mode_clarity: None, key_alternatives_count: None,
-            time_sig_numerator: None, time_sig_denominator: None, chroma_vector: None,
-            major_frame_ratio: None, major_chord_ratio: None,
-            recording_quality_score: None, snr_db: None, clipping_ratio: None,
+            peak_amplitude: None,
+            rms_level: None,
+            dynamic_range: None,
+            spectral_centroid_mean: None,
+            spectral_centroid_std: None,
+            spectral_flux_mean: None,
+            spectral_flux_std: None,
+            spectral_rolloff_mean: None,
+            spectral_rolloff_std: None,
+            spectral_flatness_mean: None,
+            spectral_flatness_std: None,
+            spectral_bandwidth_mean: None,
+            spectral_bandwidth_std: None,
+            zcr_mean: None,
+            zcr_std: None,
+            sub_band_bass_mean: None,
+            sub_band_bass_std: None,
+            sub_band_mid_mean: None,
+            sub_band_mid_std: None,
+            sub_band_high_mean: None,
+            sub_band_high_std: None,
+            sub_band_presence_mean: None,
+            sub_band_presence_std: None,
+            mfcc_0_mean: None,
+            mfcc_0_std: None,
+            mfcc_1_mean: None,
+            mfcc_1_std: None,
+            mfcc_2_mean: None,
+            mfcc_2_std: None,
+            mfcc_3_mean: None,
+            mfcc_3_std: None,
+            mfcc_4_mean: None,
+            mfcc_4_std: None,
+            mfcc_5_mean: None,
+            mfcc_5_std: None,
+            mfcc_6_mean: None,
+            mfcc_6_std: None,
+            mfcc_7_mean: None,
+            mfcc_7_std: None,
+            mfcc_8_mean: None,
+            mfcc_8_std: None,
+            mfcc_9_mean: None,
+            mfcc_9_std: None,
+            mfcc_10_mean: None,
+            mfcc_10_std: None,
+            mfcc_11_mean: None,
+            mfcc_11_std: None,
+            mfcc_12_mean: None,
+            mfcc_12_std: None,
+            tempo_bpm: None,
+            beat_count: None,
+            onset_count: None,
+            tempo_stability: None,
+            rhythmic_complexity: None,
+            mean_pitch: None,
+            pitch_range_low: None,
+            pitch_range_high: None,
+            pitch_stability: None,
+            dominant_pitch: None,
+            vibrato_presence: None,
+            vibrato_rate: None,
+            pitch_confidence_mean: None,
+            lufs_integrated: None,
+            loudness_range: None,
+            true_peak_dbfs: None,
+            crest_factor: None,
+            energy_level: None,
+            estimated_key: None,
+            key_confidence: None,
+            tonality: None,
+            harmonic_complexity: None,
+            chord_count: None,
+            chord_change_rate: None,
+            mode_clarity: None,
+            key_alternatives_count: None,
+            time_sig_numerator: None,
+            time_sig_denominator: None,
+            chroma_vector: None,
+            major_frame_ratio: None,
+            major_chord_ratio: None,
+            recording_quality_score: None,
+            snr_db: None,
+            clipping_ratio: None,
             noise_floor_db: None,
-            segment_count: None, temporal_complexity: None, coherence_score: None,
-            energy_shape: None, peak_energy: None, energy_variance: None,
-            tension_build_count: None, tension_release_count: None,
-            repetition_count: None, repetition_similarity: None,
-            solo_section_count: None, solo_section_ratio: None, transition_count: None,
-            classification_music_score: None, hnr: None,
-            loudness_std: None, peak_loudness: None,
-            spectral_flux_skewness: None, spectral_centroid_slope: None,
+            segment_count: None,
+            temporal_complexity: None,
+            coherence_score: None,
+            energy_shape: None,
+            peak_energy: None,
+            energy_variance: None,
+            tension_build_count: None,
+            tension_release_count: None,
+            repetition_count: None,
+            repetition_similarity: None,
+            solo_section_count: None,
+            solo_section_ratio: None,
+            transition_count: None,
+            classification_music_score: None,
+            hnr: None,
+            loudness_std: None,
+            peak_loudness: None,
+            spectral_flux_skewness: None,
+            spectral_centroid_slope: None,
             energy_buildup_ratio: None,
-            bass_treble_ratio_mean: None, bass_treble_ratio_std: None,
-            onset_density_std: None, loudness_buildup_slope: None,
+            bass_treble_ratio_mean: None,
+            bass_treble_ratio_std: None,
+            onset_density_std: None,
+            loudness_buildup_slope: None,
             peak_energy_time: None,
-            pitch_contour_std: None, pitch_clarity_mean: None,
+            pitch_contour_std: None,
+            pitch_clarity_mean: None,
             pitched_frame_ratio: None,
-            mfcc_flux_mean: None, onset_interval_entropy: None,
+            mfcc_flux_mean: None,
+            onset_interval_entropy: None,
             spectral_centroid_kurtosis: None,
-            bass_energy_slope: None, spectral_bandwidth_slope: None,
+            bass_energy_slope: None,
+            spectral_bandwidth_slope: None,
             loudness_dynamic_spread: None,
             beat_regularity: None,
-            peak_tension: None, tension_range: None,
-            energy_peak_count: None, energy_valley_depth_mean: None,
+            peak_tension: None,
+            tension_range: None,
+            energy_peak_count: None,
+            energy_valley_depth_mean: None,
             rhythmic_periodicity_strength: None,
             spectral_loudness_correlation: None,
-            spectral_skewness_mean: None, spectral_kurtosis_mean: None,
-            spectral_entropy_mean: None, spectral_entropy_std: None,
-            spectral_slope_mean: None, spectral_contrast_json: None,
-            sub_band_flux_bass_mean: None, sub_band_flux_bass_std: None,
-            sub_band_flux_mid_mean: None, sub_band_flux_high_mean: None,
-            tonnetz_json: None, tonnetz_flux_mean: None, chroma_flux_mean: None,
-            beat_pattern_json: None, syncopation: None,
-            pulse_clarity: None, offbeat_ratio: None,
-            spectral_spread_mean: None, spectral_spread_std: None,
-            spectral_crest_mean: None, spectral_crest_std: None,
-            roughness_mean: None, roughness_std: None,
-            mfcc_delta_mean_json: None, mfcc_delta_delta_mean_json: None,
-            stereo_width_mean: None, stereo_width_std: None,
-            attack_time_mean: None, attack_time_std: None,
-            decay_time_mean: None, decay_time_std: None,
-            onset_strength_mean: None, onset_strength_std: None,
+            spectral_skewness_mean: None,
+            spectral_kurtosis_mean: None,
+            spectral_entropy_mean: None,
+            spectral_entropy_std: None,
+            spectral_slope_mean: None,
+            spectral_contrast_json: None,
+            sub_band_flux_bass_mean: None,
+            sub_band_flux_bass_std: None,
+            sub_band_flux_mid_mean: None,
+            sub_band_flux_high_mean: None,
+            tonnetz_json: None,
+            tonnetz_flux_mean: None,
+            chroma_flux_mean: None,
+            beat_pattern_json: None,
+            syncopation: None,
+            pulse_clarity: None,
+            offbeat_ratio: None,
+            spectral_spread_mean: None,
+            spectral_spread_std: None,
+            spectral_crest_mean: None,
+            spectral_crest_std: None,
+            roughness_mean: None,
+            roughness_std: None,
+            mfcc_delta_mean_json: None,
+            mfcc_delta_delta_mean_json: None,
+            stereo_width_mean: None,
+            stereo_width_std: None,
+            attack_time_mean: None,
+            attack_time_std: None,
+            decay_time_mean: None,
+            decay_time_std: None,
+            onset_strength_mean: None,
+            onset_strength_std: None,
             onset_strength_skewness: None,
-            swing_ratio: None, microtiming_deviation_mean: None,
-            microtiming_deviation_std: None, microtiming_bias: None,
+            swing_ratio: None,
+            microtiming_deviation_mean: None,
+            microtiming_deviation_std: None,
+            microtiming_bias: None,
             temporal_modulation_json: None,
             chroma_self_similarity_bandwidth: None,
-            harmonic_percussive_ratio: None, chromagram_entropy: None,
-            spectral_contrast_slope: None, spectral_contrast_range: None,
-            onset_strength_contour_json: None, section_diversity_score: None,
-            dynamics_entropy: None, dynamics_slope: None,
-            dynamics_peak_count: None, key_change_count: None,
-            valence_score: None, arousal_score: None,
-            energy_score: None, intensity_score: None, groove_score: None,
-            improvisation_score: None, tightness_score: None,
-            build_quality_score: None, exploratory_score: None,
+            harmonic_percussive_ratio: None,
+            chromagram_entropy: None,
+            spectral_contrast_slope: None,
+            spectral_contrast_range: None,
+            onset_strength_contour_json: None,
+            section_diversity_score: None,
+            dynamics_entropy: None,
+            dynamics_slope: None,
+            dynamics_peak_count: None,
+            key_change_count: None,
+            valence_score: None,
+            arousal_score: None,
+            energy_score: None,
+            intensity_score: None,
+            groove_score: None,
+            improvisation_score: None,
+            tightness_score: None,
+            build_quality_score: None,
+            exploratory_score: None,
             transcendence_score: None,
-            tail_rms_db: None, tail_silence_pct: None,
-            head_rms_db: None, head_silence_pct: None,
+            tail_rms_db: None,
+            tail_silence_pct: None,
+            head_rms_db: None,
+            head_silence_pct: None,
         }
     }
 
@@ -1740,8 +1977,14 @@ mod tests {
         let t = test_track();
         db.upsert_track(&t).unwrap();
 
-        assert!(db.track_unchanged(&t.file_path, t.file_size, &t.file_modified).unwrap());
-        assert!(!db.track_unchanged(&t.file_path, 999, &t.file_modified).unwrap());
+        assert!(
+            db.track_unchanged(&t.file_path, t.file_size, &t.file_modified)
+                .unwrap()
+        );
+        assert!(
+            !db.track_unchanged(&t.file_path, 999, &t.file_modified)
+                .unwrap()
+        );
         assert!(!db.track_unchanged("/nonexistent", 0, "").unwrap());
     }
 
@@ -1776,36 +2019,76 @@ mod tests {
 
         let analysis = minimal_analysis(id);
         let chords = vec![
-            ChordEvent { track_id: id, chord: "Am".into(), start_time: 0.0, duration: 2.0, confidence: Some(0.8) },
-            ChordEvent { track_id: id, chord: "G".into(), start_time: 2.0, duration: 2.0, confidence: Some(0.7) },
-        ];
-        let segments = vec![
-            SegmentRecord {
-                track_id: id, segment_index: 0, label: "Music".into(), section_type: Some("Intro".into()),
-                start_time: 0.0, duration: 30.0, energy: Some(0.5), spectral_centroid: Some(2000.0),
-                zcr: Some(0.1), key: Some("Am".into()), tempo: Some(120.0), dynamic_range: Some(15.0),
-                confidence: Some(0.9), harmonic_stability: Some(0.8), rhythmic_density: Some(0.6),
-                avg_brightness: Some(2000.0), dynamic_variation: Some(5.0),
+            ChordEvent {
+                track_id: id,
+                chord: "Am".into(),
+                start_time: 0.0,
+                duration: 2.0,
+                confidence: Some(0.8),
+            },
+            ChordEvent {
+                track_id: id,
+                chord: "G".into(),
+                start_time: 2.0,
+                duration: 2.0,
+                confidence: Some(0.7),
             },
         ];
-        let tension = vec![
-            TensionPointRecord { track_id: id, time: 15.0, tension: 0.6, change_type: "BuildUp".into() },
-        ];
-        let transitions = vec![
-            TransitionRecord { track_id: id, time: 30.0, transition_type: "Smooth".into(), strength: Some(0.7), duration: Some(2.0) },
-        ];
+        let segments = vec![SegmentRecord {
+            track_id: id,
+            segment_index: 0,
+            label: "Music".into(),
+            section_type: Some("Intro".into()),
+            start_time: 0.0,
+            duration: 30.0,
+            energy: Some(0.5),
+            spectral_centroid: Some(2000.0),
+            zcr: Some(0.1),
+            key: Some("Am".into()),
+            tempo: Some(120.0),
+            dynamic_range: Some(15.0),
+            confidence: Some(0.9),
+            harmonic_stability: Some(0.8),
+            rhythmic_density: Some(0.6),
+            avg_brightness: Some(2000.0),
+            dynamic_variation: Some(5.0),
+        }];
+        let tension = vec![TensionPointRecord {
+            track_id: id,
+            time: 15.0,
+            tension: 0.6,
+            change_type: "BuildUp".into(),
+        }];
+        let transitions = vec![TransitionRecord {
+            track_id: id,
+            time: 30.0,
+            transition_type: "Smooth".into(),
+            strength: Some(0.7),
+            duration: Some(2.0),
+        }];
 
-        db.store_full_analysis(&analysis, &chords, &segments, &tension, &transitions).unwrap();
+        db.store_full_analysis(&analysis, &chords, &segments, &tension, &transitions)
+            .unwrap();
 
         // Verify counts
-        let chord_count: i64 = db.conn.query_row(
-            "SELECT COUNT(*) FROM track_chords WHERE track_id = ?1", params![id], |r| r.get(0)
-        ).unwrap();
+        let chord_count: i64 = db
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM track_chords WHERE track_id = ?1",
+                params![id],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert_eq!(chord_count, 2);
 
-        let seg_count: i64 = db.conn.query_row(
-            "SELECT COUNT(*) FROM track_segments WHERE track_id = ?1", params![id], |r| r.get(0)
-        ).unwrap();
+        let seg_count: i64 = db
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM track_segments WHERE track_id = ?1",
+                params![id],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert_eq!(seg_count, 1);
 
         assert_eq!(db.stats().unwrap().analyzed_tracks, 1);

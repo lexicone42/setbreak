@@ -14,9 +14,7 @@ pub fn classify_recording_type(
 
     // Tier 2: Path contains archive.org naming signatures
     let path_lower = file_path.to_lowercase();
-    const ARCHIVE_SIGS: &[&str] = &[
-        ".sbeok.", ".sbd.", ".aud.", ".matrix.", ".flac16", ".shnf",
-    ];
+    const ARCHIVE_SIGS: &[&str] = &[".sbeok.", ".sbd.", ".aud.", ".matrix.", ".flac16", ".shnf"];
     if ARCHIVE_SIGS.iter().any(|sig| path_lower.contains(sig)) {
         return "live";
     }
@@ -76,11 +74,7 @@ mod tests {
     fn tier2_archive_signatures_are_live() {
         // .sbeok. pattern
         assert_eq!(
-            classify_recording_type(
-                "/music/gd/gd75-03-xx.sbeok.shnf/track01.shn",
-                None,
-                None
-            ),
+            classify_recording_type("/music/gd/gd75-03-xx.sbeok.shnf/track01.shn", None, None),
             "live"
         );
         // .sbd. pattern
@@ -143,11 +137,7 @@ mod tests {
     #[test]
     fn tier5_album_tag_means_studio() {
         assert_eq!(
-            classify_recording_type(
-                "/music/gd/ab.flac",
-                None,
-                Some("American Beauty")
-            ),
+            classify_recording_type("/music/gd/ab.flac", None, Some("American Beauty")),
             "studio"
         );
         assert_eq!(

@@ -82,8 +82,7 @@ pub fn parse_gdshowsdb(data_dir: &Path) -> Result<Vec<SetlistEntry>> {
         .filter(|e| {
             let name = e.file_name().to_string_lossy().to_string();
             // Only year files (1965.yaml .. 1995.yaml), skip song_refs.yaml and debug
-            name.ends_with(".yaml")
-                && name.chars().next().map_or(false, |c| c.is_ascii_digit())
+            name.ends_with(".yaml") && name.chars().next().is_some_and(|c| c.is_ascii_digit())
         })
         .collect();
 
@@ -126,13 +125,22 @@ pub fn parse_gdshowsdb(data_dir: &Path) -> Result<Vec<SetlistEntry>> {
 
 /// Import setlist entries into the database (bulk insert in a transaction).
 /// Clears existing entries for the given source before inserting.
-pub fn import_setlists(db: &Database, entries: &[SetlistEntry], source: &str) -> Result<ImportResult> {
-    let tx = db.conn.unchecked_transaction()
+pub fn import_setlists(
+    db: &Database,
+    entries: &[SetlistEntry],
+    source: &str,
+) -> Result<ImportResult> {
+    let tx = db
+        .conn
+        .unchecked_transaction()
         .context("Failed to start transaction")?;
 
     // Clear existing entries for this source
-    tx.execute("DELETE FROM setlists WHERE source = ?1", rusqlite::params![source])
-        .context("Failed to clear existing setlist entries")?;
+    tx.execute(
+        "DELETE FROM setlists WHERE source = ?1",
+        rusqlite::params![source],
+    )
+    .context("Failed to clear existing setlist entries")?;
 
     let mut stmt = tx.prepare(
         "INSERT INTO setlists (date, set_num, position, song, segued, venue, city, state, source)
@@ -144,10 +152,14 @@ pub fn import_setlists(db: &Database, entries: &[SetlistEntry], source: &str) ->
 
     for e in entries {
         stmt.execute(rusqlite::params![
-            e.date, e.set_num, e.position, e.song, e.segued,
-            e.venue, e.city, e.state, e.source,
-        ]).with_context(|| format!("Failed to insert setlist entry: {} {} set {} pos {}",
-            e.date, e.song, e.set_num, e.position))?;
+            e.date, e.set_num, e.position, e.song, e.segued, e.venue, e.city, e.state, e.source,
+        ])
+        .with_context(|| {
+            format!(
+                "Failed to insert setlist entry: {} {} set {} pos {}",
+                e.date, e.song, e.set_num, e.position
+            )
+        })?;
         shows.insert(e.date.clone());
         songs += 1;
     }
@@ -166,7 +178,9 @@ pub fn import_setlists(db: &Database, entries: &[SetlistEntry], source: &str) ->
 /// Used for incremental imports (e.g., phish.in fetching show by show).
 /// Skips entries that would violate the UNIQUE constraint.
 pub fn import_setlists_append(db: &Database, entries: &[SetlistEntry]) -> Result<ImportResult> {
-    let tx = db.conn.unchecked_transaction()
+    let tx = db
+        .conn
+        .unchecked_transaction()
         .context("Failed to start transaction")?;
 
     let mut stmt = tx.prepare(
@@ -178,11 +192,17 @@ pub fn import_setlists_append(db: &Database, entries: &[SetlistEntry]) -> Result
     let mut songs = 0usize;
 
     for e in entries {
-        let inserted = stmt.execute(rusqlite::params![
-            e.date, e.set_num, e.position, e.song, e.segued,
-            e.venue, e.city, e.state, e.source,
-        ]).with_context(|| format!("Failed to insert: {} {} set {} pos {}",
-            e.date, e.song, e.set_num, e.position))?;
+        let inserted = stmt
+            .execute(rusqlite::params![
+                e.date, e.set_num, e.position, e.song, e.segued, e.venue, e.city, e.state,
+                e.source,
+            ])
+            .with_context(|| {
+                format!(
+                    "Failed to insert: {} {} set {} pos {}",
+                    e.date, e.song, e.set_num, e.position
+                )
+            })?;
         if inserted > 0 {
             shows.insert(e.date.clone());
             songs += 1;
@@ -232,7 +252,10 @@ mod tests {
         assert_eq!(shows.len(), 1);
 
         let show = &shows["1977/05/08"];
-        assert_eq!(show.venue.as_deref(), Some("Barton Hall, Cornell University"));
+        assert_eq!(
+            show.venue.as_deref(),
+            Some("Barton Hall, Cornell University")
+        );
         assert_eq!(show.sets.len(), 2);
         assert_eq!(show.sets[0].songs.len(), 2);
         assert_eq!(show.sets[0].songs[0].name, "Minglewood Blues");
@@ -293,13 +316,15 @@ mod tests {
         assert_eq!(result.songs_imported, 3);
 
         // Verify data in DB
-        let count: i64 = db.conn
+        let count: i64 = db
+            .conn
             .query_row("SELECT COUNT(*) FROM setlists", [], |r| r.get(0))
             .unwrap();
         assert_eq!(count, 3);
 
         // Check segue data
-        let segued: bool = db.conn
+        let segued: bool = db
+            .conn
             .query_row(
                 "SELECT segued FROM setlists WHERE song = 'Scarlet Begonias'",
                 [],

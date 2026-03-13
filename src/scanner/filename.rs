@@ -16,7 +16,9 @@ pub struct ParsedPath {
 
 /// Look up a band code via the global BandRegistry.
 fn expand_band_code(code: &str) -> Option<String> {
-    crate::bands::registry().lookup_code(code).map(|s| s.to_string())
+    crate::bands::registry()
+        .lookup_code(code)
+        .map(|s| s.to_string())
 }
 
 /// Expand a 2-digit year to 4 digits (30-99 → 19xx, 00-29 → 20xx).
@@ -53,16 +55,15 @@ static BAND_DATE_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
         r"(?ix)
         ^(?P<band>[a-z]+)
-        (?P<year>\d{2,4})-(?P<month>\d{1,2})-(?P<day>\d{1,2})"
+        (?P<year>\d{2,4})-(?P<month>\d{1,2})-(?P<day>\d{1,2})",
     )
     .unwrap()
 });
 
 // Extract disc from filename remainder: d + 1-2 digits, not part of a word like "sbd"
 // Requires d to be preceded by non-letter (or string start) and followed by non-digit
-static REMAINDER_DISC_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)(?:^|[^a-zA-Z])d(?P<disc>\d{1,2})(?:[^0-9]|$)").unwrap()
-});
+static REMAINDER_DISC_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)(?:^|[^a-zA-Z])d(?P<disc>\d{1,2})(?:[^0-9]|$)").unwrap());
 
 // Extract track: t/tr/track + digits, preceded by non-letter
 static REMAINDER_TRACK_RE: LazyLock<Regex> = LazyLock::new(|| {
@@ -75,9 +76,8 @@ static REMAINDER_SET_RE: LazyLock<Regex> = LazyLock::new(|| {
 });
 
 // Combined disc+track without separator: d206 = disc 2, track 06
-static DISC_TRACK_COMBINED_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)(?:^|[^a-zA-Z])d(?P<disc>\d)(?P<track>\d{2,3})$").unwrap()
-});
+static DISC_TRACK_COMBINED_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)(?:^|[^a-zA-Z])d(?P<disc>\d)(?P<track>\d{2,3})$").unwrap());
 
 // Pattern 2: Path-based with band/year/date-venue/disc-track structure
 // e.g., Grateful Dead/1977/1977-05-08 Barton Hall/d1t01 - Scarlet Begonias.mp3
@@ -86,7 +86,7 @@ static PATH_DATE_VENUE_RE: LazyLock<Regex> = LazyLock::new(|| {
         r"(?ix)
         (?P<year>\d{4})-(?P<month>\d{2})-(?P<day>\d{2})
         \s+
-        (?P<venue>.+)"
+        (?P<venue>.+)",
     )
     .unwrap()
 });
@@ -95,23 +95,19 @@ static PATH_DISC_TRACK_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
         r"(?ix)
         ^(?:d(?P<disc>\d+))?t(?P<track>\d+)
-        (?:\s*[-–]\s*(?P<title>.+))?$"
+        (?:\s*[-–]\s*(?P<title>.+))?$",
     )
     .unwrap()
 });
 
 // Pattern 3: Set-based path structure
 // e.g., Phish/1997.11.22/Set II/04 - Tweezer.flac
-static SET_DIR_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)^Set\s+(?P<set>I{1,3}|[1-3]|Encore)$").unwrap()
-});
+static SET_DIR_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)^Set\s+(?P<set>I{1,3}|[1-3]|Encore)$").unwrap());
 
 // Pattern 4: Generic date extraction (supports 2-4 digit years)
 static GENERIC_DATE_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(
-        r"(?P<year>\d{2,4})[\.\-/](?P<month>\d{1,2})[\.\-/](?P<day>\d{1,2})"
-    )
-    .unwrap()
+    Regex::new(r"(?P<year>\d{2,4})[\.\-/](?P<month>\d{1,2})[\.\-/](?P<day>\d{1,2})").unwrap()
 });
 
 // Generic track number + title: "01 - Title", "01. Title", "23 Good Times"
@@ -262,7 +258,7 @@ mod tests {
 
     static INIT: Once = Once::new();
     fn setup() {
-        INIT.call_once(|| crate::bands::init_default());
+        INIT.call_once(crate::bands::init_default);
     }
 
     // === Compact format (band code + date in filename) ===
@@ -451,7 +447,8 @@ mod tests {
     #[test]
     fn test_path_based_grateful_dead() {
         setup();
-        let p = PathBuf::from("Grateful Dead/1977/1977-05-08 Barton Hall/d1t01 - Scarlet Begonias.mp3");
+        let p =
+            PathBuf::from("Grateful Dead/1977/1977-05-08 Barton Hall/d1t01 - Scarlet Begonias.mp3");
         let r = parse_path(&p);
         assert_eq!(r.band.as_deref(), Some("Grateful Dead"));
         assert_eq!(r.date.as_deref(), Some("1977-05-08"));

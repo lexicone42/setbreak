@@ -44,8 +44,8 @@ pub fn extract(track_id: i64, r: &AnalysisResult) -> ExtractionResult {
     let (sbf_high_mean, _) = mean_std(&r.spectral.sub_band_flux_high);
 
     // Tonnetz: mean per dimension across frames → JSON [6 values]
-    let tonnetz_json = mean_per_channel(&r.spectral.tonnetz)
-        .and_then(|v| serde_json::to_string(&v).ok());
+    let tonnetz_json =
+        mean_per_channel(&r.spectral.tonnetz).and_then(|v| serde_json::to_string(&v).ok());
 
     // Tonnetz flux: mean frame-to-frame distance in 6D harmonic space (HCDF)
     let tonnetz_flux_mean_val = compute_channel_flux(&r.spectral.tonnetz);
@@ -67,10 +67,10 @@ pub fn extract(track_id: i64, r: &AnalysisResult) -> ExtractionResult {
     let (sw_mean, sw_std) = mean_std(&r.spectral.stereo_width);
 
     // MFCC deltas: per-coefficient mean across frames → JSON [13 values each]
-    let mfcc_delta_json = mean_per_channel(&r.spectral.mfcc_delta)
-        .and_then(|v| serde_json::to_string(&v).ok());
-    let mfcc_delta_delta_json = mean_per_channel(&r.spectral.mfcc_delta_delta)
-        .and_then(|v| serde_json::to_string(&v).ok());
+    let mfcc_delta_json =
+        mean_per_channel(&r.spectral.mfcc_delta).and_then(|v| serde_json::to_string(&v).ok());
+    let mfcc_delta_delta_json =
+        mean_per_channel(&r.spectral.mfcc_delta_delta).and_then(|v| serde_json::to_string(&v).ok());
 
     // Temporal modulation spectrum: 5 band energies → JSON
     let temporal_modulation_json = if r.spectral.temporal_modulation_bands.is_empty() {
@@ -101,7 +101,13 @@ pub fn extract(track_id: i64, r: &AnalysisResult) -> ExtractionResult {
     let pitch_confidence_mean = if r.pitch.pitch_track.frames.is_empty() {
         None
     } else {
-        let sum: f64 = r.pitch.pitch_track.frames.iter().map(|f| f.confidence as f64).sum();
+        let sum: f64 = r
+            .pitch
+            .pitch_track
+            .frames
+            .iter()
+            .map(|f| f.confidence as f64)
+            .sum();
         Some(sum / r.pitch.pitch_track.frames.len() as f64)
     };
 
@@ -126,18 +132,31 @@ pub fn extract(track_id: i64, r: &AnalysisResult) -> ExtractionResult {
 
     // Energy profile
     let energy_shape = Some(format!("{:?}", r.segments.patterns.energy_profile.shape));
-    let peak_energy = r.segments.patterns.energy_profile.peaks.first().map(|p| p.1 as f64);
+    let peak_energy = r
+        .segments
+        .patterns
+        .energy_profile
+        .peaks
+        .first()
+        .map(|p| p.1 as f64);
     let energy_variance = Some(r.segments.patterns.energy_profile.variance as f64);
 
     // Tension counts
     let mut tension_build_count = 0i32;
     let mut tension_release_count = 0i32;
-    let tension_records: Vec<TensionPointRecord> = r.segments.patterns.tension_profile
+    let tension_records: Vec<TensionPointRecord> = r
+        .segments
+        .patterns
+        .tension_profile
         .iter()
         .map(|tp| {
             let change_str = format!("{:?}", tp.change_type);
-            if change_str.contains("Build") { tension_build_count += 1; }
-            if change_str.contains("Release") { tension_release_count += 1; }
+            if change_str.contains("Build") {
+                tension_build_count += 1;
+            }
+            if change_str.contains("Release") {
+                tension_release_count += 1;
+            }
             TensionPointRecord {
                 track_id,
                 time: tp.time as f64,
@@ -152,7 +171,13 @@ pub fn extract(track_id: i64, r: &AnalysisResult) -> ExtractionResult {
     let repetition_similarity = if r.segments.patterns.repetitions.is_empty() {
         None
     } else {
-        let sum: f64 = r.segments.patterns.repetitions.iter().map(|p| p.similarity as f64).sum();
+        let sum: f64 = r
+            .segments
+            .patterns
+            .repetitions
+            .iter()
+            .map(|p| p.similarity as f64)
+            .sum();
         Some(sum / r.segments.patterns.repetitions.len() as f64)
     };
 
@@ -161,7 +186,9 @@ pub fn extract(track_id: i64, r: &AnalysisResult) -> ExtractionResult {
     let (solo_count, solo_ratio) = count_solo_sections(&r.segments.structure, duration);
 
     // Transitions
-    let transition_records: Vec<TransitionRecord> = r.segments.transitions
+    let transition_records: Vec<TransitionRecord> = r
+        .segments
+        .transitions
         .iter()
         .map(|t| TransitionRecord {
             track_id,
@@ -263,7 +290,9 @@ pub fn extract(track_id: i64, r: &AnalysisResult) -> ExtractionResult {
         energy_level: Some(r.perceptual.energy_level as f64),
         loudness_std: {
             let stl = &r.perceptual.short_term_loudness;
-            if stl.is_empty() { None } else {
+            if stl.is_empty() {
+                None
+            } else {
                 let mean = stl.iter().sum::<f32>() / stl.len() as f32;
                 let var = stl.iter().map(|&v| (v - mean).powi(2)).sum::<f32>() / stl.len() as f32;
                 Some(var.sqrt() as f64)
@@ -271,7 +300,9 @@ pub fn extract(track_id: i64, r: &AnalysisResult) -> ExtractionResult {
         },
         peak_loudness: {
             let ml = &r.perceptual.momentary_loudness;
-            if ml.is_empty() { None } else {
+            if ml.is_empty() {
+                None
+            } else {
                 Some(ml.iter().cloned().fold(f32::NEG_INFINITY, f32::max) as f64)
             }
         },
@@ -307,7 +338,9 @@ pub fn extract(track_id: i64, r: &AnalysisResult) -> ExtractionResult {
         spectral_bandwidth_slope: compute_linear_slope(&r.spectral.spectral_bandwidth),
         loudness_dynamic_spread: {
             let stl = &r.perceptual.short_term_loudness;
-            if stl.is_empty() { None } else {
+            if stl.is_empty() {
+                None
+            } else {
                 let min = stl.iter().cloned().fold(f32::INFINITY, f32::min);
                 let max = stl.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
                 Some((max - min) as f64)
@@ -318,13 +351,24 @@ pub fn extract(track_id: i64, r: &AnalysisResult) -> ExtractionResult {
         beat_regularity: compute_beat_regularity(&r.temporal.onsets),
 
         // Tension/energy profile features
-        peak_tension: r.segments.patterns.tension_profile.iter()
+        peak_tension: r
+            .segments
+            .patterns
+            .tension_profile
+            .iter()
             .map(|t| t.tension as f64)
             .fold(None, |acc, v| Some(acc.map_or(v, |a: f64| a.max(v)))),
         tension_range: {
-            let tensions: Vec<f64> = r.segments.patterns.tension_profile.iter()
-                .map(|t| t.tension as f64).collect();
-            if tensions.is_empty() { None } else {
+            let tensions: Vec<f64> = r
+                .segments
+                .patterns
+                .tension_profile
+                .iter()
+                .map(|t| t.tension as f64)
+                .collect();
+            if tensions.is_empty() {
+                None
+            } else {
                 let min = tensions.iter().cloned().fold(f64::INFINITY, f64::min);
                 let max = tensions.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
                 Some(max - min)
@@ -334,21 +378,34 @@ pub fn extract(track_id: i64, r: &AnalysisResult) -> ExtractionResult {
         energy_valley_depth_mean: {
             let peaks = &r.segments.patterns.energy_profile.peaks;
             let valleys = &r.segments.patterns.energy_profile.valleys;
-            if peaks.is_empty() || valleys.is_empty() { None } else {
-                let mean_peak: f64 = peaks.iter().map(|p| p.1 as f64).sum::<f64>() / peaks.len() as f64;
-                let mean_valley: f64 = valleys.iter().map(|v| v.1 as f64).sum::<f64>() / valleys.len() as f64;
-                if mean_peak > 1e-10 { Some(mean_valley / mean_peak) } else { None }
+            if peaks.is_empty() || valleys.is_empty() {
+                None
+            } else {
+                let mean_peak: f64 =
+                    peaks.iter().map(|p| p.1 as f64).sum::<f64>() / peaks.len() as f64;
+                let mean_valley: f64 =
+                    valleys.iter().map(|v| v.1 as f64).sum::<f64>() / valleys.len() as f64;
+                if mean_peak > 1e-10 {
+                    Some(mean_valley / mean_peak)
+                } else {
+                    None
+                }
             }
         },
 
         // Periodicity features
-        rhythmic_periodicity_strength: r.segments.patterns.periodic_events.iter()
+        rhythmic_periodicity_strength: r
+            .segments
+            .patterns
+            .periodic_events
+            .iter()
             .map(|e| e.strength as f64)
             .fold(None, |acc, v| Some(acc.map_or(v, |a: f64| a.max(v)))),
 
         // Cross-feature correlations
         spectral_loudness_correlation: compute_pearson_correlation(
-            &r.spectral.spectral_centroid, &r.perceptual.short_term_loudness,
+            &r.spectral.spectral_centroid,
+            &r.perceptual.short_term_loudness,
         ),
 
         // Spectral shape descriptors
@@ -407,7 +464,10 @@ pub fn extract(track_id: i64, r: &AnalysisResult) -> ExtractionResult {
         spectral_contrast_slope: Some(r.spectral.spectral_contrast_slope as f64),
         spectral_contrast_range: Some(r.spectral.spectral_contrast_range as f64),
         onset_strength_contour_json: onset_contour_json,
-        section_diversity_score: compute_section_diversity(&r.segments.structure, &r.segments.segments),
+        section_diversity_score: compute_section_diversity(
+            &r.segments.structure,
+            &r.segments.segments,
+        ),
 
         // Musical
         estimated_key: Some(r.musical.key.key.clone()),
@@ -489,21 +549,26 @@ pub fn extract(track_id: i64, r: &AnalysisResult) -> ExtractionResult {
     }
 }
 
-fn extract_chords(track_id: i64, r: &AnalysisResult) -> (Option<i32>, Option<f64>, Vec<ChordEvent>) {
+fn extract_chords(
+    track_id: i64,
+    r: &AnalysisResult,
+) -> (Option<i32>, Option<f64>, Vec<ChordEvent>) {
     let progression = match &r.musical.chord_progression {
         Some(p) => p,
         None => return (Some(0), Some(0.0), vec![]),
     };
 
-    let records: Vec<ChordEvent> = progression.chords.iter().map(|c| {
-        ChordEvent {
+    let records: Vec<ChordEvent> = progression
+        .chords
+        .iter()
+        .map(|c| ChordEvent {
             track_id,
             chord: c.chord.clone(),
             start_time: c.start_time as f64,
             duration: c.duration as f64,
             confidence: Some(c.confidence as f64),
-        }
-    }).collect();
+        })
+        .collect();
 
     let unique_chords: HashSet<&str> = records.iter().map(|c| c.chord.as_str()).collect();
     let chord_count = Some(unique_chords.len() as i32);
@@ -527,33 +592,45 @@ fn extract_chords(track_id: i64, r: &AnalysisResult) -> (Option<i32>, Option<f64
 
 fn extract_segments(track_id: i64, r: &AnalysisResult) -> Vec<SegmentRecord> {
     // Merge AudioSegment with StructuralSection data where indices match
-    r.segments.segments.iter().enumerate().map(|(i, seg)| {
-        // Find matching structural section for this segment index
-        let section = r.segments.structure.iter().find(|s| s.segment_indices.contains(&i));
+    r.segments
+        .segments
+        .iter()
+        .enumerate()
+        .map(|(i, seg)| {
+            // Find matching structural section for this segment index
+            let section = r
+                .segments
+                .structure
+                .iter()
+                .find(|s| s.segment_indices.contains(&i));
 
-        SegmentRecord {
-            track_id,
-            segment_index: i as i32,
-            label: format!("{:?}", seg.label),
-            section_type: section.map(|s| format!("{:?}", s.section_type)),
-            start_time: seg.start_time as f64,
-            duration: seg.duration as f64,
-            energy: Some(seg.energy as f64),
-            spectral_centroid: Some(seg.spectral_centroid as f64),
-            zcr: Some(seg.zcr as f64),
-            key: seg.key.clone(),
-            tempo: seg.tempo.map(|t| t as f64),
-            dynamic_range: Some(seg.dynamic_range as f64),
-            confidence: Some(seg.confidence as f64),
-            harmonic_stability: section.map(|s| s.features.harmonic_stability as f64),
-            rhythmic_density: section.map(|s| s.features.rhythmic_density as f64),
-            avg_brightness: section.map(|s| s.features.avg_brightness as f64),
-            dynamic_variation: section.map(|s| s.features.dynamic_variation as f64),
-        }
-    }).collect()
+            SegmentRecord {
+                track_id,
+                segment_index: i as i32,
+                label: format!("{:?}", seg.label),
+                section_type: section.map(|s| format!("{:?}", s.section_type)),
+                start_time: seg.start_time as f64,
+                duration: seg.duration as f64,
+                energy: Some(seg.energy as f64),
+                spectral_centroid: Some(seg.spectral_centroid as f64),
+                zcr: Some(seg.zcr as f64),
+                key: seg.key.clone(),
+                tempo: seg.tempo.map(|t| t as f64),
+                dynamic_range: Some(seg.dynamic_range as f64),
+                confidence: Some(seg.confidence as f64),
+                harmonic_stability: section.map(|s| s.features.harmonic_stability as f64),
+                rhythmic_density: section.map(|s| s.features.rhythmic_density as f64),
+                avg_brightness: section.map(|s| s.features.avg_brightness as f64),
+                dynamic_variation: section.map(|s| s.features.dynamic_variation as f64),
+            }
+        })
+        .collect()
 }
 
-fn count_solo_sections(structure: &[ferrous_waves::analysis::segments::StructuralSection], total_duration: f64) -> (i32, f64) {
+fn count_solo_sections(
+    structure: &[ferrous_waves::analysis::segments::StructuralSection],
+    total_duration: f64,
+) -> (i32, f64) {
     let mut count = 0i32;
     let mut solo_duration = 0.0f64;
 
@@ -565,7 +642,11 @@ fn count_solo_sections(structure: &[ferrous_waves::analysis::segments::Structura
         }
     }
 
-    let ratio = if total_duration > 0.0 { solo_duration / total_duration } else { 0.0 };
+    let ratio = if total_duration > 0.0 {
+        solo_duration / total_duration
+    } else {
+        0.0
+    };
     (count, ratio)
 }
 
@@ -575,10 +656,14 @@ fn mean_std(values: &[f32]) -> (f64, f64) {
     }
     let n = values.len() as f64;
     let mean = values.iter().map(|&v| v as f64).sum::<f64>() / n;
-    let variance = values.iter().map(|&v| {
-        let diff = v as f64 - mean;
-        diff * diff
-    }).sum::<f64>() / n;
+    let variance = values
+        .iter()
+        .map(|&v| {
+            let diff = v as f64 - mean;
+            diff * diff
+        })
+        .sum::<f64>()
+        / n;
     (mean, variance.sqrt())
 }
 
@@ -591,8 +676,16 @@ fn compute_skewness(values: &[f32]) -> Option<f64> {
     }
     let n = values.len() as f64;
     let mean = values.iter().map(|&v| v as f64).sum::<f64>() / n;
-    let m2 = values.iter().map(|&v| (v as f64 - mean).powi(2)).sum::<f64>() / n;
-    let m3 = values.iter().map(|&v| (v as f64 - mean).powi(3)).sum::<f64>() / n;
+    let m2 = values
+        .iter()
+        .map(|&v| (v as f64 - mean).powi(2))
+        .sum::<f64>()
+        / n;
+    let m3 = values
+        .iter()
+        .map(|&v| (v as f64 - mean).powi(3))
+        .sum::<f64>()
+        / n;
     let std = m2.sqrt();
     if std < 1e-10 {
         return Some(0.0);
@@ -662,7 +755,11 @@ fn compute_buildup_ratio(values: &[f32]) -> Option<f64> {
     }
     let third = values.len() / 3;
     let first_energy: f64 = values[..third].iter().map(|&v| v as f64).sum::<f64>() / third as f64;
-    let last_energy: f64 = values[values.len() - third..].iter().map(|&v| v as f64).sum::<f64>() / third as f64;
+    let last_energy: f64 = values[values.len() - third..]
+        .iter()
+        .map(|&v| v as f64)
+        .sum::<f64>()
+        / third as f64;
     if first_energy < 1e-10 {
         Some(if last_energy > 1e-10 { 10.0 } else { 1.0 })
     } else {
@@ -671,11 +768,7 @@ fn compute_buildup_ratio(values: &[f32]) -> Option<f64> {
 }
 
 /// Mean of bass/(high+presence) ratio per frame. High = groove-heavy, low = treble-heavy.
-fn compute_bass_treble_ratio_mean(
-    bass: &[f32],
-    high: &[f32],
-    presence: &[f32],
-) -> Option<f64> {
+fn compute_bass_treble_ratio_mean(bass: &[f32], high: &[f32], presence: &[f32]) -> Option<f64> {
     if bass.is_empty() || high.is_empty() || presence.is_empty() {
         return None;
     }
@@ -683,18 +776,18 @@ fn compute_bass_treble_ratio_mean(
     let mut sum = 0.0;
     for i in 0..n {
         let treble = (high[i] + presence[i]) as f64;
-        let ratio = if treble > 1e-10 { bass[i] as f64 / treble } else { 1.0 };
+        let ratio = if treble > 1e-10 {
+            bass[i] as f64 / treble
+        } else {
+            1.0
+        };
         sum += ratio;
     }
     Some(sum / n as f64)
 }
 
 /// Std of bass/(high+presence) ratio per frame. High = tonal balance shifts a lot.
-fn compute_bass_treble_ratio_std(
-    bass: &[f32],
-    high: &[f32],
-    presence: &[f32],
-) -> Option<f64> {
+fn compute_bass_treble_ratio_std(bass: &[f32], high: &[f32], presence: &[f32]) -> Option<f64> {
     if bass.is_empty() || high.is_empty() || presence.is_empty() {
         return None;
     }
@@ -702,7 +795,11 @@ fn compute_bass_treble_ratio_std(
     let mut ratios: Vec<f64> = Vec::with_capacity(n);
     for i in 0..n {
         let treble = (high[i] + presence[i]) as f64;
-        ratios.push(if treble > 1e-10 { bass[i] as f64 / treble } else { 1.0 });
+        ratios.push(if treble > 1e-10 {
+            bass[i] as f64 / treble
+        } else {
+            1.0
+        });
     }
     let mean = ratios.iter().sum::<f64>() / ratios.len() as f64;
     let var = ratios.iter().map(|&r| (r - mean).powi(2)).sum::<f64>() / ratios.len() as f64;
@@ -759,11 +856,19 @@ fn compute_kurtosis(values: &[f32]) -> Option<f64> {
     }
     let n = values.len() as f64;
     let mean = values.iter().map(|v| *v as f64).sum::<f64>() / n;
-    let m2 = values.iter().map(|v| (*v as f64 - mean).powi(2)).sum::<f64>() / n;
+    let m2 = values
+        .iter()
+        .map(|v| (*v as f64 - mean).powi(2))
+        .sum::<f64>()
+        / n;
     if m2 < 1e-12 {
         return None;
     }
-    let m4 = values.iter().map(|v| (*v as f64 - mean).powi(4)).sum::<f64>() / n;
+    let m4 = values
+        .iter()
+        .map(|v| (*v as f64 - mean).powi(4))
+        .sum::<f64>()
+        / n;
     Some(m4 / (m2 * m2) - 3.0) // excess kurtosis (normal = 0)
 }
 
@@ -799,7 +904,10 @@ fn compute_pitched_frame_ratio(frames: &[PitchFrame]) -> Option<f64> {
     if frames.is_empty() {
         return None;
     }
-    let pitched = frames.iter().filter(|f| f.confidence > 0.5 && f.frequency.is_some()).count();
+    let pitched = frames
+        .iter()
+        .filter(|f| f.confidence > 0.5 && f.frequency.is_some())
+        .count();
     Some(pitched as f64 / frames.len() as f64)
 }
 
@@ -819,9 +927,9 @@ fn compute_mfcc_flux_mean(mfcc: &[Vec<f32>]) -> Option<f64> {
     let mut total_dist = 0.0_f64;
     for frame in 1..n_frames {
         let mut dist_sq = 0.0_f64;
-        for coeff in 0..n_coeffs {
-            if frame < mfcc[coeff].len() && frame - 1 < mfcc[coeff].len() {
-                let d = (mfcc[coeff][frame] - mfcc[coeff][frame - 1]) as f64;
+        for channel in &mfcc[..n_coeffs] {
+            if frame < channel.len() && frame - 1 < channel.len() {
+                let d = (channel[frame] - channel[frame - 1]) as f64;
                 dist_sq += d * d;
             }
         }
@@ -882,7 +990,8 @@ fn compute_beat_regularity(beats: &[f32]) -> Option<f64> {
     if mean < 1e-10 {
         return None;
     }
-    let variance = intervals.iter().map(|&i| (i - mean).powi(2)).sum::<f64>() / intervals.len() as f64;
+    let variance =
+        intervals.iter().map(|&i| (i - mean).powi(2)).sum::<f64>() / intervals.len() as f64;
     Some(variance.sqrt() / mean) // CV = std/mean
 }
 
@@ -973,9 +1082,17 @@ fn compute_section_diversity(
     }
 
     // Build normalized feature vectors per segment
-    let features: Vec<[f64; 4]> = segments.iter().map(|s| {
-        [s.energy as f64, s.spectral_centroid as f64, s.zcr as f64, s.dynamic_range as f64]
-    }).collect();
+    let features: Vec<[f64; 4]> = segments
+        .iter()
+        .map(|s| {
+            [
+                s.energy as f64,
+                s.spectral_centroid as f64,
+                s.zcr as f64,
+                s.dynamic_range as f64,
+            ]
+        })
+        .collect();
 
     // Normalize each dimension to [0, 1] within this track
     let n_dims = 4;
@@ -987,18 +1104,23 @@ fn compute_section_diversity(
             maxs[d] = maxs[d].max(f[d]);
         }
     }
-    let ranges: Vec<f64> = (0..n_dims).map(|d| {
-        let r = maxs[d] - mins[d];
-        if r > 1e-10 { r } else { 1.0 }
-    }).collect();
+    let ranges: Vec<f64> = (0..n_dims)
+        .map(|d| {
+            let r = maxs[d] - mins[d];
+            if r > 1e-10 { r } else { 1.0 }
+        })
+        .collect();
 
-    let normed: Vec<[f64; 4]> = features.iter().map(|f| {
-        let mut n = [0.0; 4];
-        for d in 0..n_dims {
-            n[d] = (f[d] - mins[d]) / ranges[d];
-        }
-        n
-    }).collect();
+    let normed: Vec<[f64; 4]> = features
+        .iter()
+        .map(|f| {
+            let mut n = [0.0; 4];
+            for d in 0..n_dims {
+                n[d] = (f[d] - mins[d]) / ranges[d];
+            }
+            n
+        })
+        .collect();
 
     // Mean pairwise Euclidean distance
     let n = normed.len();
@@ -1006,11 +1128,18 @@ fn compute_section_diversity(
     let mut count = 0u64;
     for i in 0..n {
         for j in (i + 1)..n {
-            let dist: f64 = (0..n_dims).map(|d| (normed[i][d] - normed[j][d]).powi(2)).sum::<f64>().sqrt();
+            let dist: f64 = (0..n_dims)
+                .map(|d| (normed[i][d] - normed[j][d]).powi(2))
+                .sum::<f64>()
+                .sqrt();
             total_dist += dist;
             count += 1;
         }
     }
 
-    if count == 0 { None } else { Some(total_dist / count as f64) }
+    if count == 0 {
+        None
+    } else {
+        Some(total_dist / count as f64)
+    }
 }

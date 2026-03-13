@@ -1,5 +1,5 @@
-use ferrous_waves::audio::{AudioBuffer, AudioFormat};
 use ferrous_waves::AudioFile;
+use ferrous_waves::audio::{AudioBuffer, AudioFormat};
 use std::path::Path;
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};

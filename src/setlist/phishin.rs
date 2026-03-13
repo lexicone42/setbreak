@@ -72,17 +72,19 @@ pub fn fetch_phish_setlists(
 ) -> Result<ImportResult> {
     // Step 1: Get all show dates
     println!("Fetching Phish show dates from phish.in...");
-    let dates = fetch_all_show_dates(rate_limit_ms)
-        .context("Failed to fetch show dates from phish.in")?;
+    let dates =
+        fetch_all_show_dates(rate_limit_ms).context("Failed to fetch show dates from phish.in")?;
     println!("Found {} shows", dates.len());
 
     // Step 2: Check which dates we already have
-    let existing = db.get_setlist_dates_for_source("phish.in")
+    let existing = db
+        .get_setlist_dates_for_source("phish.in")
         .context("Failed to query existing setlist dates")?;
     let existing_set: std::collections::HashSet<&str> =
         existing.iter().map(|s| s.as_str()).collect();
 
-    let to_fetch: Vec<&str> = dates.iter()
+    let to_fetch: Vec<&str> = dates
+        .iter()
         .map(|s| s.as_str())
         .filter(|d| !existing_set.contains(d))
         .collect();
@@ -96,14 +98,19 @@ pub fn fetch_phish_setlists(
         });
     }
 
-    println!("Fetching setlists for {} new shows ({} already cached)...",
-        to_fetch.len(), existing_set.len());
+    println!(
+        "Fetching setlists for {} new shows ({} already cached)...",
+        to_fetch.len(),
+        existing_set.len()
+    );
 
     // Step 3: Fetch each show's tracks
     let pb = ProgressBar::new(to_fetch.len() as u64);
     pb.set_style(
         ProgressStyle::default_bar()
-            .template("{spinner:.green} [{bar:40.cyan/blue}] {pos}/{len} shows ({eta} remaining) {msg}")
+            .template(
+                "{spinner:.green} [{bar:40.cyan/blue}] {pos}/{len} shows ({eta} remaining) {msg}",
+            )
             .unwrap()
             .progress_chars("=>-"),
     );
@@ -135,11 +142,16 @@ pub fn fetch_phish_setlists(
     }
 
     if dry_run {
-        let show_count = all_entries.iter()
+        let show_count = all_entries
+            .iter()
             .map(|e| &e.date)
             .collect::<std::collections::HashSet<_>>()
             .len();
-        println!("Would import {} songs across {} shows", all_entries.len(), show_count);
+        println!(
+            "Would import {} songs across {} shows",
+            all_entries.len(),
+            show_count
+        );
         return Ok(ImportResult {
             shows_imported: show_count,
             songs_imported: all_entries.len(),
@@ -207,9 +219,7 @@ fn fetch_all_show_dates(rate_limit_ms: u64) -> Result<Vec<String>> {
 
 /// Fetch track listing for a single show date.
 fn fetch_show_detail(date: &str) -> Result<Vec<SetlistEntry>> {
-    let show: ShowDetail = api_get(&format!(
-        "https://phish.in/api/v2/shows/{date}"
-    ))?;
+    let show: ShowDetail = api_get(&format!("https://phish.in/api/v2/shows/{date}"))?;
 
     let city = show.venue.as_ref().and_then(|v| v.city.clone());
     let state = show.venue.as_ref().and_then(|v| v.state.clone());

@@ -7,8 +7,8 @@ use indicatif::{ProgressBar, ProgressStyle};
 use serde::Deserialize;
 
 use crate::bands::ArchiveStrategy;
-use crate::db::models::{ArchiveShow, MissingShow};
 use crate::db::Database;
+use crate::db::models::{ArchiveShow, MissingShow};
 
 /// Results per page from archive.org search API.
 const PAGE_SIZE: usize = 500;
@@ -54,7 +54,12 @@ pub fn discover_missing_shows(
     let registry = crate::bands::registry();
     let strategy = registry
         .resolve_archive_query(band)
-        .ok_or_else(|| anyhow::anyhow!("Unknown band '{}'. No archive.org strategy configured.", band))?
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "Unknown band '{}'. No archive.org strategy configured.",
+                band
+            )
+        })?
         .clone();
     let cache_key = query_cache_key(&strategy).to_string();
     let parsed_band = registry.resolve_canonical_name(band);
@@ -69,7 +74,10 @@ pub fn discover_missing_shows(
 
     let shows = match archive_shows {
         Some(cached) => {
-            println!("Using cached data ({} shows, refresh with --refresh)", cached.len());
+            println!(
+                "Using cached data ({} shows, refresh with --refresh)",
+                cached.len()
+            );
             cached
         }
         None => {
@@ -79,7 +87,8 @@ pub fn discover_missing_shows(
             };
             println!("Fetching shows from archive.org {}...", label);
             let fetched = fetch_collection_shows(&strategy, rate_limit_ms)?;
-            let count = db.store_archive_shows(&fetched)
+            let count = db
+                .store_archive_shows(&fetched)
                 .context("Failed to cache shows")?;
             println!("Cached {} shows from archive.org", count);
             fetched
@@ -89,12 +98,14 @@ pub fn discover_missing_shows(
     let archive_count = shows.len();
 
     // Get local show dates
-    let local_dates: Vec<String> = db.get_local_show_dates(&parsed_band)
+    let local_dates: Vec<String> = db
+        .get_local_show_dates(&parsed_band)
         .context("Failed to get local dates")?;
     let local_count = local_dates.len();
 
     // Build a set of local dates for fast lookup
-    let local_set: std::collections::HashSet<&str> = local_dates.iter().map(|d| d.as_str()).collect();
+    let local_set: std::collections::HashSet<&str> =
+        local_dates.iter().map(|d| d.as_str()).collect();
 
     // Group archive shows by date, keeping the best quality per date
     let mut by_date: HashMap<String, Vec<&ArchiveShow>> = HashMap::new();
@@ -118,7 +129,8 @@ pub fn discover_missing_shows(
         }
 
         // Find best tape (highest combined quality)
-        let best = tapes.iter()
+        let best = tapes
+            .iter()
             .max_by_key(|t| t.source_quality * 10 + t.format_quality)
             .unwrap();
 
@@ -166,7 +178,10 @@ const YEAR_RANGES: &[(u32, u32)] = &[
 
 /// Fetch all shows from an archive.org collection or creator.
 /// Uses year-range chunking to avoid Solr's 10K deep-pagination limit.
-fn fetch_collection_shows(strategy: &ArchiveStrategy, rate_limit_ms: u64) -> Result<Vec<ArchiveShow>> {
+fn fetch_collection_shows(
+    strategy: &ArchiveStrategy,
+    rate_limit_ms: u64,
+) -> Result<Vec<ArchiveShow>> {
     let cache_key = query_cache_key(strategy);
     // First, get total count for progress bar
     let first_resp = fetch_search_page(strategy, None, 0, 0)?;
@@ -175,7 +190,7 @@ fn fetch_collection_shows(strategy: &ArchiveStrategy, rate_limit_ms: u64) -> Res
     let pb = ProgressBar::new(total as u64);
     pb.set_style(
         ProgressStyle::with_template(
-            "  [{elapsed_precise}] {bar:40.cyan/blue} {pos}/{len} shows ({per_sec})"
+            "  [{elapsed_precise}] {bar:40.cyan/blue} {pos}/{len} shows ({per_sec})",
         )
         .unwrap()
         .progress_chars("##-"),
@@ -216,7 +231,9 @@ fn fetch_collection_shows(strategy: &ArchiveStrategy, rate_limit_ms: u64) -> Res
                     offset += PAGE_SIZE;
                 }
                 Err(e) => {
-                    log::warn!("Failed to fetch {cache_key} {year_start}-{year_end} offset {offset}: {e}");
+                    log::warn!(
+                        "Failed to fetch {cache_key} {year_start}-{year_end} offset {offset}: {e}"
+                    );
                     break;
                 }
             }
@@ -295,11 +312,16 @@ fn extract_date(raw: &str) -> Option<String> {
 /// sbd=3 (soundboard), matrix=2, aud=1 (audience), unknown=0
 fn parse_source_quality(identifier: &str) -> i32 {
     let id_lower = identifier.to_lowercase();
-    if id_lower.contains(".sbd.") || id_lower.contains("_sbd_") || id_lower.contains("-sbd-") || id_lower.contains(".sbd") {
+    if id_lower.contains(".sbd.")
+        || id_lower.contains("_sbd_")
+        || id_lower.contains("-sbd-")
+        || id_lower.contains(".sbd")
+    {
         3
     } else if id_lower.contains("matrix") || id_lower.contains(".mtx.") {
         2
-    } else if id_lower.contains(".aud.") || id_lower.contains("_aud_") || id_lower.contains("-aud-") {
+    } else if id_lower.contains(".aud.") || id_lower.contains("_aud_") || id_lower.contains("-aud-")
+    {
         1
     } else {
         0 // Unknown source
@@ -314,7 +336,11 @@ fn parse_format_quality(identifier: &str) -> i32 {
         3
     } else if id_lower.contains("shn") {
         2
-    } else if id_lower.contains("mp3") || id_lower.contains("64kb") || id_lower.contains("128kb") || id_lower.contains("vbr") {
+    } else if id_lower.contains("mp3")
+        || id_lower.contains("64kb")
+        || id_lower.contains("128kb")
+        || id_lower.contains("vbr")
+    {
         1
     } else {
         0
@@ -387,8 +413,8 @@ pub fn pick_best_source(
     let mut skipped_sbd = false;
     let candidates: Vec<_> = if sbd_stream_only {
         // Both SBD (3) and matrix (2) are stream-only for restricted bands
-        let (restricted, downloadable): (Vec<_>, Vec<_>) = shows.into_iter()
-            .partition(|s| s.source_quality >= 2);
+        let (restricted, downloadable): (Vec<_>, Vec<_>) =
+            shows.into_iter().partition(|s| s.source_quality >= 2);
         if !restricted.is_empty() && !downloadable.is_empty() {
             skipped_sbd = true;
         }
@@ -402,11 +428,17 @@ pub fn pick_best_source(
     }
 
     // Best = highest combined quality (source * 10 + format)
-    let best = candidates.iter()
+    let best = candidates
+        .iter()
         .max_by_key(|s| s.source_quality * 10 + s.format_quality)
         .unwrap();
 
-    Ok(Some((best.identifier.clone(), best.source_quality, best.format_quality, skipped_sbd)))
+    Ok(Some((
+        best.identifier.clone(),
+        best.source_quality,
+        best.format_quality,
+        skipped_sbd,
+    )))
 }
 
 /// Format quality label.
@@ -445,16 +477,25 @@ mod tests {
 
     #[test]
     fn test_extract_date() {
-        assert_eq!(extract_date("1977-05-08T00:00:00Z"), Some("1977-05-08".into()));
+        assert_eq!(
+            extract_date("1977-05-08T00:00:00Z"),
+            Some("1977-05-08".into())
+        );
         assert_eq!(extract_date("1977-05-08"), Some("1977-05-08".into()));
-        assert_eq!(extract_date("1977-05-08T00:00:00"), Some("1977-05-08".into()));
+        assert_eq!(
+            extract_date("1977-05-08T00:00:00"),
+            Some("1977-05-08".into())
+        );
         assert_eq!(extract_date("bad"), None);
         assert_eq!(extract_date(""), None);
     }
 
     #[test]
     fn test_source_quality() {
-        assert_eq!(parse_source_quality("gd1977-05-08.sbd.miller.12345.sbeok.shnf"), 3);
+        assert_eq!(
+            parse_source_quality("gd1977-05-08.sbd.miller.12345.sbeok.shnf"),
+            3
+        );
         assert_eq!(parse_source_quality("gd1977-05-08.aud.12345.shnf"), 1);
         assert_eq!(parse_source_quality("gd1977-05-08.matrix.12345.flac16"), 2);
         assert_eq!(parse_source_quality("gd1977-05-08.12345.shnf"), 0);
@@ -462,8 +503,14 @@ mod tests {
 
     #[test]
     fn test_format_quality() {
-        assert_eq!(parse_format_quality("gd1977-05-08.sbd.miller.12345.flac16"), 3);
-        assert_eq!(parse_format_quality("gd1977-05-08.sbd.miller.12345.shnf"), 2);
+        assert_eq!(
+            parse_format_quality("gd1977-05-08.sbd.miller.12345.flac16"),
+            3
+        );
+        assert_eq!(
+            parse_format_quality("gd1977-05-08.sbd.miller.12345.shnf"),
+            2
+        );
         assert_eq!(parse_format_quality("gd1977-05-08.sbd.miller.12345.mp3"), 1);
         assert_eq!(parse_format_quality("gd1977-05-08.sbd.miller.12345"), 0);
     }
@@ -480,13 +527,25 @@ mod tests {
 
     #[test]
     fn test_query_cache_key() {
-        assert_eq!(query_cache_key(&ArchiveStrategy::Collection("GratefulDead".into())), "GratefulDead");
-        assert_eq!(query_cache_key(&ArchiveStrategy::Creator("Phish".into())), "Phish");
+        assert_eq!(
+            query_cache_key(&ArchiveStrategy::Collection("GratefulDead".into())),
+            "GratefulDead"
+        );
+        assert_eq!(
+            query_cache_key(&ArchiveStrategy::Creator("Phish".into())),
+            "Phish"
+        );
     }
 
     #[test]
     fn test_query_clause() {
-        assert_eq!(query_clause(&ArchiveStrategy::Collection("GratefulDead".into())), "collection%3AGratefulDead");
-        assert_eq!(query_clause(&ArchiveStrategy::Creator("Phish".into())), "creator%3APhish");
+        assert_eq!(
+            query_clause(&ArchiveStrategy::Collection("GratefulDead".into())),
+            "collection%3AGratefulDead"
+        );
+        assert_eq!(
+            query_clause(&ArchiveStrategy::Creator("Phish".into())),
+            "creator%3APhish"
+        );
     }
 }

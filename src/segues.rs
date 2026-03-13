@@ -9,8 +9,8 @@
 //! 3. Audio boundary analysis (this module — works for any recording)
 
 use crate::analyzer::boundary;
-use crate::db::models::SegueTrackRow;
 use crate::db::Database;
+use crate::db::models::SegueTrackRow;
 
 /// A detected segue between two consecutive tracks.
 pub struct DetectedSegue {
@@ -37,7 +37,9 @@ pub fn run_segue_detection(
     let rows = db.get_tracks_for_segue_detection(band)?;
 
     if rows.is_empty() {
-        println!("No tracks with boundary features found. Run `setbreak extract-boundaries` first.");
+        println!(
+            "No tracks with boundary features found. Run `setbreak extract-boundaries` first."
+        );
         return Ok(());
     }
 
@@ -45,7 +47,10 @@ pub fn run_segue_detection(
     let segues = detect_all_segues(&rows, min_confidence, date_filter);
 
     if segues.is_empty() {
-        println!("No segues detected above confidence threshold {:.2}.", min_confidence);
+        println!(
+            "No segues detected above confidence threshold {:.2}.",
+            min_confidence
+        );
         return Ok(());
     }
 
@@ -82,7 +87,10 @@ fn detect_all_segues(
         let b = &rows[i + 1];
 
         // Skip if not same date, disc, or set
-        if a.parsed_date != b.parsed_date || a.parsed_disc != b.parsed_disc || a.parsed_set != b.parsed_set {
+        if a.parsed_date != b.parsed_date
+            || a.parsed_disc != b.parsed_disc
+            || a.parsed_set != b.parsed_set
+        {
             i += 1;
             continue;
         }
@@ -135,15 +143,16 @@ fn detect_all_segues(
 
 fn print_compact(segues: &[DetectedSegue]) {
     // Header
-    println!(
-        "{:<12} {:<4} {:>5}  {}",
-        "Date", "Band", "Conf", "Segue"
-    );
+    println!("{:<12} {:<4} {:>5}  Segue", "Date", "Band", "Conf");
     println!("{}", "-".repeat(75));
 
     for s in segues {
         let band = s.band.as_deref().unwrap_or("??");
-        let segue_display = format!("{} -> {}", truncate(&s.track_a_title, 28), truncate(&s.track_b_title, 28));
+        let segue_display = format!(
+            "{} -> {}",
+            truncate(&s.track_a_title, 28),
+            truncate(&s.track_b_title, 28)
+        );
         println!(
             "{:<12} {:<4} {:>4.0}%  {}",
             s.date,
@@ -163,10 +172,7 @@ fn print_detail(segues: &[DetectedSegue]) {
             band,
             s.confidence * 100.0,
         );
-        println!(
-            "  {} -> {}",
-            s.track_a_title, s.track_b_title,
-        );
+        println!("  {} -> {}", s.track_a_title, s.track_b_title,);
         println!(
             "    A tail: {:.1} dBFS, {:.0}% silent | B head: {:.1} dBFS, {:.0}% silent",
             s.track_a_tail_rms,

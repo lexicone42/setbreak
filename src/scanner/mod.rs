@@ -2,9 +2,9 @@ pub mod classify;
 pub mod filename;
 pub mod metadata;
 
-use crate::db::models::NewTrack;
-use crate::db::Database;
 use crate::SUPPORTED_EXTENSIONS;
+use crate::db::Database;
+use crate::db::models::NewTrack;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::path::Path;
 use thiserror::Error;
@@ -29,12 +29,20 @@ pub struct ScanResult {
 }
 
 /// Scan directories for audio files and insert/update tracks in the database.
-pub fn scan(db: &Database, paths: &[String], force: bool) -> std::result::Result<ScanResult, ScanError> {
+pub fn scan(
+    db: &Database,
+    paths: &[String],
+    force: bool,
+) -> std::result::Result<ScanResult, ScanError> {
     // First pass: collect all audio file paths
     let mut audio_files: Vec<walkdir::DirEntry> = Vec::new();
 
     for path in paths {
-        for entry in WalkDir::new(path).follow_links(true).into_iter().filter_map(|e| e.ok()) {
+        for entry in WalkDir::new(path)
+            .follow_links(true)
+            .into_iter()
+            .filter_map(|e| e.ok())
+        {
             if !entry.file_type().is_file() {
                 continue;
             }
@@ -54,7 +62,7 @@ pub fn scan(db: &Database, paths: &[String], force: bool) -> std::result::Result
     let pb = ProgressBar::new(total);
     pb.set_style(
         ProgressStyle::with_template(
-            "{spinner:.green} [{bar:40.cyan/blue}] {pos}/{len} ({per_sec}) ({eta}) {msg}"
+            "{spinner:.green} [{bar:40.cyan/blue}] {pos}/{len} ({per_sec}) ({eta}) {msg}",
         )
         .unwrap()
         .progress_chars("#>-"),
@@ -70,7 +78,10 @@ pub fn scan(db: &Database, paths: &[String], force: bool) -> std::result::Result
     };
 
     // Wrap all inserts in a single transaction for dramatic speedup
-    let tx = db.conn.unchecked_transaction().map_err(crate::db::DbError::from)?;
+    let tx = db
+        .conn
+        .unchecked_transaction()
+        .map_err(crate::db::DbError::from)?;
 
     for entry in &audio_files {
         let path = entry.path();
@@ -220,17 +231,37 @@ fn process_file(
             updated_at = datetime('now')
         ",
         rusqlite::params![
-            new_track.file_path, new_track.file_size, new_track.file_modified, new_track.format,
-            new_track.title, new_track.artist, new_track.album, new_track.date,
-            new_track.track_number, new_track.disc_number,
-            new_track.set_name, new_track.venue, new_track.comment,
-            new_track.parsed_band, new_track.parsed_date, new_track.parsed_venue, new_track.parsed_disc,
-            new_track.parsed_track, new_track.parsed_set, new_track.parsed_title, new_track.duration_secs,
+            new_track.file_path,
+            new_track.file_size,
+            new_track.file_modified,
+            new_track.format,
+            new_track.title,
+            new_track.artist,
+            new_track.album,
+            new_track.date,
+            new_track.track_number,
+            new_track.disc_number,
+            new_track.set_name,
+            new_track.venue,
+            new_track.comment,
+            new_track.parsed_band,
+            new_track.parsed_date,
+            new_track.parsed_venue,
+            new_track.parsed_disc,
+            new_track.parsed_track,
+            new_track.parsed_set,
+            new_track.parsed_title,
+            new_track.duration_secs,
             new_track.recording_type,
         ],
-    ).map_err(|e| crate::db::DbError::from(e))?;
+    )
+    .map_err(crate::db::DbError::from)?;
 
-    if is_new { Ok(FileAction::New) } else { Ok(FileAction::Updated) }
+    if is_new {
+        Ok(FileAction::New)
+    } else {
+        Ok(FileAction::Updated)
+    }
 }
 
 fn format_mtime(meta: &std::fs::Metadata) -> String {

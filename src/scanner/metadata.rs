@@ -66,7 +66,8 @@ pub fn read_tags(path: &Path) -> TagInfo {
         artist: tag.artist().map(|s| s.to_string()),
         album: tag.album().map(|s| s.to_string()),
         date: tag.year().map(|y| y.to_string()).or_else(|| {
-            tag.get_string(&ItemKey::RecordingDate).map(|s| s.to_string())
+            tag.get_string(&ItemKey::RecordingDate)
+                .map(|s| s.to_string())
         }),
         track_number: tag.track().map(|t| t as i32),
         disc_number: tag.disk().map(|d| d as i32),

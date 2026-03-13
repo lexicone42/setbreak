@@ -276,8 +276,7 @@ impl Database {
             match self.conn.execute(&sql, []) {
                 Ok(_) => {}
                 Err(rusqlite::Error::SqliteFailure(err, _))
-                    if err.code == rusqlite::ffi::ErrorCode::Unknown
-                        || err.extended_code == 1 =>
+                    if err.code == rusqlite::ffi::ErrorCode::Unknown || err.extended_code == 1 =>
                 {
                     // Column already exists — fine
                 }
@@ -393,8 +392,7 @@ impl Database {
             match self.conn.execute(&sql, []) {
                 Ok(_) => {}
                 Err(rusqlite::Error::SqliteFailure(err, _))
-                    if err.code == rusqlite::ffi::ErrorCode::Unknown
-                        || err.extended_code == 1 =>
+                    if err.code == rusqlite::ffi::ErrorCode::Unknown || err.extended_code == 1 =>
                 {
                     // Column already exists — fine
                 }
@@ -427,8 +425,7 @@ impl Database {
             match self.conn.execute(&sql, []) {
                 Ok(_) => {}
                 Err(rusqlite::Error::SqliteFailure(err, _))
-                    if err.code == rusqlite::ffi::ErrorCode::Unknown
-                        || err.extended_code == 1 =>
+                    if err.code == rusqlite::ffi::ErrorCode::Unknown || err.extended_code == 1 =>
                 {
                     // Column already exists — fine
                 }
@@ -493,13 +490,29 @@ impl Database {
     fn migrate_v9(&self) -> Result<()> {
         try_add_column(&self.conn, "analysis_results", "loudness_std REAL")?;
         try_add_column(&self.conn, "analysis_results", "peak_loudness REAL")?;
-        try_add_column(&self.conn, "analysis_results", "spectral_flux_skewness REAL")?;
-        try_add_column(&self.conn, "analysis_results", "spectral_centroid_slope REAL")?;
+        try_add_column(
+            &self.conn,
+            "analysis_results",
+            "spectral_flux_skewness REAL",
+        )?;
+        try_add_column(
+            &self.conn,
+            "analysis_results",
+            "spectral_centroid_slope REAL",
+        )?;
         try_add_column(&self.conn, "analysis_results", "energy_buildup_ratio REAL")?;
-        try_add_column(&self.conn, "analysis_results", "bass_treble_ratio_mean REAL")?;
+        try_add_column(
+            &self.conn,
+            "analysis_results",
+            "bass_treble_ratio_mean REAL",
+        )?;
         try_add_column(&self.conn, "analysis_results", "bass_treble_ratio_std REAL")?;
         try_add_column(&self.conn, "analysis_results", "onset_density_std REAL")?;
-        try_add_column(&self.conn, "analysis_results", "loudness_buildup_slope REAL")?;
+        try_add_column(
+            &self.conn,
+            "analysis_results",
+            "loudness_buildup_slope REAL",
+        )?;
         try_add_column(&self.conn, "analysis_results", "peak_energy_time REAL")?;
         Ok(())
     }
@@ -512,11 +525,27 @@ impl Database {
         try_add_column(&self.conn, "analysis_results", "pitched_frame_ratio REAL")?;
         // Creative derivations
         try_add_column(&self.conn, "analysis_results", "mfcc_flux_mean REAL")?;
-        try_add_column(&self.conn, "analysis_results", "onset_interval_entropy REAL")?;
-        try_add_column(&self.conn, "analysis_results", "spectral_centroid_kurtosis REAL")?;
+        try_add_column(
+            &self.conn,
+            "analysis_results",
+            "onset_interval_entropy REAL",
+        )?;
+        try_add_column(
+            &self.conn,
+            "analysis_results",
+            "spectral_centroid_kurtosis REAL",
+        )?;
         try_add_column(&self.conn, "analysis_results", "bass_energy_slope REAL")?;
-        try_add_column(&self.conn, "analysis_results", "spectral_bandwidth_slope REAL")?;
-        try_add_column(&self.conn, "analysis_results", "loudness_dynamic_spread REAL")?;
+        try_add_column(
+            &self.conn,
+            "analysis_results",
+            "spectral_bandwidth_slope REAL",
+        )?;
+        try_add_column(
+            &self.conn,
+            "analysis_results",
+            "loudness_dynamic_spread REAL",
+        )?;
         Ok(())
     }
 
@@ -526,25 +555,65 @@ impl Database {
         try_add_column(&self.conn, "analysis_results", "peak_tension REAL")?;
         try_add_column(&self.conn, "analysis_results", "tension_range REAL")?;
         try_add_column(&self.conn, "analysis_results", "energy_peak_count INTEGER")?;
-        try_add_column(&self.conn, "analysis_results", "energy_valley_depth_mean REAL")?;
-        try_add_column(&self.conn, "analysis_results", "rhythmic_periodicity_strength REAL")?;
-        try_add_column(&self.conn, "analysis_results", "spectral_loudness_correlation REAL")?;
+        try_add_column(
+            &self.conn,
+            "analysis_results",
+            "energy_valley_depth_mean REAL",
+        )?;
+        try_add_column(
+            &self.conn,
+            "analysis_results",
+            "rhythmic_periodicity_strength REAL",
+        )?;
+        try_add_column(
+            &self.conn,
+            "analysis_results",
+            "spectral_loudness_correlation REAL",
+        )?;
         Ok(())
     }
     /// V12: Spectral shape descriptors, sub-band flux, chroma/Tonnetz, beat-sync rhythm
     fn migrate_v12(&self) -> Result<()> {
         // Spectral shape descriptors (from STFT higher moments)
-        try_add_column(&self.conn, "analysis_results", "spectral_skewness_mean REAL")?;
-        try_add_column(&self.conn, "analysis_results", "spectral_kurtosis_mean REAL")?;
+        try_add_column(
+            &self.conn,
+            "analysis_results",
+            "spectral_skewness_mean REAL",
+        )?;
+        try_add_column(
+            &self.conn,
+            "analysis_results",
+            "spectral_kurtosis_mean REAL",
+        )?;
         try_add_column(&self.conn, "analysis_results", "spectral_entropy_mean REAL")?;
         try_add_column(&self.conn, "analysis_results", "spectral_entropy_std REAL")?;
         try_add_column(&self.conn, "analysis_results", "spectral_slope_mean REAL")?;
-        try_add_column(&self.conn, "analysis_results", "spectral_contrast_json TEXT")?;
+        try_add_column(
+            &self.conn,
+            "analysis_results",
+            "spectral_contrast_json TEXT",
+        )?;
         // Sub-band spectral flux
-        try_add_column(&self.conn, "analysis_results", "sub_band_flux_bass_mean REAL")?;
-        try_add_column(&self.conn, "analysis_results", "sub_band_flux_bass_std REAL")?;
-        try_add_column(&self.conn, "analysis_results", "sub_band_flux_mid_mean REAL")?;
-        try_add_column(&self.conn, "analysis_results", "sub_band_flux_high_mean REAL")?;
+        try_add_column(
+            &self.conn,
+            "analysis_results",
+            "sub_band_flux_bass_mean REAL",
+        )?;
+        try_add_column(
+            &self.conn,
+            "analysis_results",
+            "sub_band_flux_bass_std REAL",
+        )?;
+        try_add_column(
+            &self.conn,
+            "analysis_results",
+            "sub_band_flux_mid_mean REAL",
+        )?;
+        try_add_column(
+            &self.conn,
+            "analysis_results",
+            "sub_band_flux_high_mean REAL",
+        )?;
         // Chromagram and harmonic features
         try_add_column(&self.conn, "analysis_results", "tonnetz_json TEXT")?;
         try_add_column(&self.conn, "analysis_results", "tonnetz_flux_mean REAL")?;
@@ -568,7 +637,11 @@ impl Database {
         try_add_column(&self.conn, "analysis_results", "roughness_std REAL")?;
         // MFCC dynamics
         try_add_column(&self.conn, "analysis_results", "mfcc_delta_mean_json TEXT")?;
-        try_add_column(&self.conn, "analysis_results", "mfcc_delta_delta_mean_json TEXT")?;
+        try_add_column(
+            &self.conn,
+            "analysis_results",
+            "mfcc_delta_delta_mean_json TEXT",
+        )?;
         // Stereo characteristics
         try_add_column(&self.conn, "analysis_results", "stereo_width_mean REAL")?;
         try_add_column(&self.conn, "analysis_results", "stereo_width_std REAL")?;
@@ -579,28 +652,68 @@ impl Database {
         try_add_column(&self.conn, "analysis_results", "decay_time_std REAL")?;
         try_add_column(&self.conn, "analysis_results", "onset_strength_mean REAL")?;
         try_add_column(&self.conn, "analysis_results", "onset_strength_std REAL")?;
-        try_add_column(&self.conn, "analysis_results", "onset_strength_skewness REAL")?;
+        try_add_column(
+            &self.conn,
+            "analysis_results",
+            "onset_strength_skewness REAL",
+        )?;
         // Rhythm micro-features
         try_add_column(&self.conn, "analysis_results", "swing_ratio REAL")?;
-        try_add_column(&self.conn, "analysis_results", "microtiming_deviation_mean REAL")?;
-        try_add_column(&self.conn, "analysis_results", "microtiming_deviation_std REAL")?;
+        try_add_column(
+            &self.conn,
+            "analysis_results",
+            "microtiming_deviation_mean REAL",
+        )?;
+        try_add_column(
+            &self.conn,
+            "analysis_results",
+            "microtiming_deviation_std REAL",
+        )?;
         try_add_column(&self.conn, "analysis_results", "microtiming_bias REAL")?;
         // Temporal modulation spectrum
-        try_add_column(&self.conn, "analysis_results", "temporal_modulation_json TEXT")?;
+        try_add_column(
+            &self.conn,
+            "analysis_results",
+            "temporal_modulation_json TEXT",
+        )?;
         // Self-similarity structure
-        try_add_column(&self.conn, "analysis_results", "chroma_self_similarity_bandwidth REAL")?;
+        try_add_column(
+            &self.conn,
+            "analysis_results",
+            "chroma_self_similarity_bandwidth REAL",
+        )?;
         Ok(())
     }
 
     /// V14: Music understanding features — H/P ratio, chromagram entropy, contrast stats,
     /// onset contour shape, section diversity
     fn migrate_v14(&self) -> Result<()> {
-        try_add_column(&self.conn, "analysis_results", "harmonic_percussive_ratio REAL")?;
+        try_add_column(
+            &self.conn,
+            "analysis_results",
+            "harmonic_percussive_ratio REAL",
+        )?;
         try_add_column(&self.conn, "analysis_results", "chromagram_entropy REAL")?;
-        try_add_column(&self.conn, "analysis_results", "spectral_contrast_slope REAL")?;
-        try_add_column(&self.conn, "analysis_results", "spectral_contrast_range REAL")?;
-        try_add_column(&self.conn, "analysis_results", "onset_strength_contour_json TEXT")?;
-        try_add_column(&self.conn, "analysis_results", "section_diversity_score REAL")?;
+        try_add_column(
+            &self.conn,
+            "analysis_results",
+            "spectral_contrast_slope REAL",
+        )?;
+        try_add_column(
+            &self.conn,
+            "analysis_results",
+            "spectral_contrast_range REAL",
+        )?;
+        try_add_column(
+            &self.conn,
+            "analysis_results",
+            "onset_strength_contour_json TEXT",
+        )?;
+        try_add_column(
+            &self.conn,
+            "analysis_results",
+            "section_diversity_score REAL",
+        )?;
         Ok(())
     }
 
@@ -615,7 +728,11 @@ impl Database {
     fn migrate_v16(&self) -> Result<()> {
         try_add_column(&self.conn, "analysis_results", "dynamics_entropy REAL")?;
         try_add_column(&self.conn, "analysis_results", "dynamics_slope REAL")?;
-        try_add_column(&self.conn, "analysis_results", "dynamics_peak_count INTEGER")?;
+        try_add_column(
+            &self.conn,
+            "analysis_results",
+            "dynamics_peak_count INTEGER",
+        )?;
         try_add_column(&self.conn, "analysis_results", "key_change_count INTEGER")?;
         Ok(())
     }
@@ -643,7 +760,7 @@ impl Database {
             CREATE INDEX IF NOT EXISTS idx_setlists_date ON setlists(date);
             CREATE INDEX IF NOT EXISTS idx_setlists_song ON setlists(song);
             CREATE INDEX IF NOT EXISTS idx_setlists_source ON setlists(source);
-            "
+            ",
         )?;
         Ok(())
     }

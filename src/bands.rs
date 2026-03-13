@@ -86,7 +86,9 @@ pub fn init_default() {
 
 /// Get the global band registry. Panics if not initialized.
 pub fn registry() -> &'static BandRegistry {
-    REGISTRY.get().expect("BandRegistry not initialized — call bands::init() first")
+    REGISTRY
+        .get()
+        .expect("BandRegistry not initialized — call bands::init() first")
 }
 
 impl BandRegistry {
@@ -95,9 +97,9 @@ impl BandRegistry {
 
         // Merge custom bands
         for custom in custom_bands {
-            let existing = bands.iter_mut().find(|b| {
-                b.canonical_name.to_lowercase() == custom.name.to_lowercase()
-            });
+            let existing = bands
+                .iter_mut()
+                .find(|b| b.canonical_name.to_lowercase() == custom.name.to_lowercase());
 
             if let Some(entry) = existing {
                 // Additive merge: append new codes
@@ -252,7 +254,8 @@ impl BandRegistry {
                         if let Some(rest) = dir_name.strip_prefix(from.as_str()) {
                             if rest.starts_with(|c: char| c.is_ascii_digit()) {
                                 // Ensure it has a 4-digit year
-                                if rest.len() >= 4 && rest[..4].chars().all(|c| c.is_ascii_digit()) {
+                                if rest.len() >= 4 && rest[..4].chars().all(|c| c.is_ascii_digit())
+                                {
                                     return format!("{to}{rest}");
                                 }
                             }
@@ -272,7 +275,10 @@ impl BandRegistry {
         for band in &self.bands {
             if let Some((prefix, _)) = &band.search_fallback_prefix {
                 if lower.starts_with(prefix.as_str()) {
-                    return band.search_fallback_prefix.as_ref().map(|(_, v)| v.as_str());
+                    return band
+                        .search_fallback_prefix
+                        .as_ref()
+                        .map(|(_, v)| v.as_str());
                 }
             }
         }
@@ -575,8 +581,14 @@ mod tests {
         assert_eq!(reg.lookup_code("billy"), Some("Billy Strings"));
         assert_eq!(reg.lookup_code("bs"), Some("Billy Strings"));
         assert_eq!(reg.lookup_code("bsco"), Some("Billy Strings"));
-        assert_eq!(reg.lookup_code("kg"), Some("King Gizzard & the Lizard Wizard"));
-        assert_eq!(reg.lookup_code("kglw"), Some("King Gizzard & the Lizard Wizard"));
+        assert_eq!(
+            reg.lookup_code("kg"),
+            Some("King Gizzard & the Lizard Wizard")
+        );
+        assert_eq!(
+            reg.lookup_code("kglw"),
+            Some("King Gizzard & the Lizard Wizard")
+        );
         assert_eq!(reg.lookup_code("trey"), Some("Trey Anastasio Band"));
         assert_eq!(reg.lookup_code("tab"), Some("Trey Anastasio Band"));
         assert_eq!(reg.lookup_code("lotus"), Some("Lotus"));
@@ -590,13 +602,31 @@ mod tests {
     #[test]
     fn test_lookup_search_name() {
         let reg = test_registry();
-        assert_eq!(reg.lookup_search_name("grateful dead"), Some("Grateful Dead"));
-        assert_eq!(reg.lookup_search_name("Grateful Dead"), Some("Grateful Dead"));
-        assert_eq!(reg.lookup_search_name("grateful_dead"), Some("Grateful Dead"));
+        assert_eq!(
+            reg.lookup_search_name("grateful dead"),
+            Some("Grateful Dead")
+        );
+        assert_eq!(
+            reg.lookup_search_name("Grateful Dead"),
+            Some("Grateful Dead")
+        );
+        assert_eq!(
+            reg.lookup_search_name("grateful_dead"),
+            Some("Grateful Dead")
+        );
         assert_eq!(reg.lookup_search_name("phish"), Some("Phish"));
-        assert_eq!(reg.lookup_search_name("king gizzard"), Some("King Gizzard & the Lizard Wizard"));
-        assert_eq!(reg.lookup_search_name("King Gizzard and the Lizard Wizard"), Some("King Gizzard & the Lizard Wizard"));
-        assert_eq!(reg.lookup_search_name("medeski martin"), Some("Medeski Martin & Wood"));
+        assert_eq!(
+            reg.lookup_search_name("king gizzard"),
+            Some("King Gizzard & the Lizard Wizard")
+        );
+        assert_eq!(
+            reg.lookup_search_name("King Gizzard and the Lizard Wizard"),
+            Some("King Gizzard & the Lizard Wizard")
+        );
+        assert_eq!(
+            reg.lookup_search_name("medeski martin"),
+            Some("Medeski Martin & Wood")
+        );
         assert_eq!(reg.lookup_search_name("unknown band"), None);
     }
 
@@ -691,9 +721,15 @@ mod tests {
     #[test]
     fn test_resolve_search_creator() {
         let reg = test_registry();
-        assert_eq!(reg.resolve_search_creator("gd1977-05-08"), Some("GratefulDead"));
+        assert_eq!(
+            reg.resolve_search_creator("gd1977-05-08"),
+            Some("GratefulDead")
+        );
         assert_eq!(reg.resolve_search_creator("ph1997-11-22"), Some("Phish"));
-        assert_eq!(reg.resolve_search_creator("bts1999-03-08"), Some("BuiltToSpill"));
+        assert_eq!(
+            reg.resolve_search_creator("bts1999-03-08"),
+            Some("BuiltToSpill")
+        );
         assert_eq!(reg.resolve_search_creator("unknown-dir"), None);
     }
 

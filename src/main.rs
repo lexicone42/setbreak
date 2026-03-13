@@ -415,13 +415,13 @@ fn main() -> Result<()> {
     setbreak::bands::init(&config.custom_bands);
 
     // Resolve database path: CLI > config > XDG default
-    let db_path = cli.db_path
+    let db_path = cli
+        .db_path
         .or(config.db_path.clone())
         .unwrap_or_else(setbreak::config::default_db_path);
     log::info!("Database: {}", db_path.display());
 
-    let db = setbreak::db::Database::open(&db_path)
-        .context("Failed to open database")?;
+    let db = setbreak::db::Database::open(&db_path).context("Failed to open database")?;
 
     match cli.command {
         Commands::Scan { paths, force } => {
@@ -429,7 +429,9 @@ fn main() -> Result<()> {
             let scan_paths = if !paths.is_empty() {
                 paths
             } else if !config.music_dirs.is_empty() {
-                config.music_dirs.iter()
+                config
+                    .music_dirs
+                    .iter()
                     .map(|p| p.to_string_lossy().to_string())
                     .collect()
             } else {
@@ -438,23 +440,25 @@ fn main() -> Result<()> {
                 );
             };
 
-            let result = setbreak::scanner::scan(&db, &scan_paths, force)
-                .context("Scan failed")?;
+            let result = setbreak::scanner::scan(&db, &scan_paths, force).context("Scan failed")?;
             println!(
                 "Scan complete: {} scanned, {} new, {} updated, {} skipped, {} errors",
                 result.scanned, result.new, result.updated, result.skipped, result.errors
             );
         }
 
-        Commands::Analyze { jobs, force, filter } => {
-            let workers = if jobs > 0 { jobs } else { config.resolve_workers() };
-            let result = setbreak::analyzer::analyze_tracks(
-                &db,
-                force,
-                workers,
-                filter.as_deref(),
-            )
-            .context("Analysis failed")?;
+        Commands::Analyze {
+            jobs,
+            force,
+            filter,
+        } => {
+            let workers = if jobs > 0 {
+                jobs
+            } else {
+                config.resolve_workers()
+            };
+            let result = setbreak::analyzer::analyze_tracks(&db, force, workers, filter.as_deref())
+                .context("Analysis failed")?;
             println!(
                 "Analysis complete: {} analyzed, {} failed",
                 result.analyzed, result.failed
@@ -465,9 +469,9 @@ fn main() -> Result<()> {
             if dry_run {
                 println!("DRY RUN — no changes will be written to the database");
             }
-            let result = setbreak::setlist::lookup_setlists(
-                &db, dry_run, config.archive.rate_limit_ms,
-            ).context("Setlist lookup failed")?;
+            let result =
+                setbreak::setlist::lookup_setlists(&db, dry_run, config.archive.rate_limit_ms)
+                    .context("Setlist lookup failed")?;
             println!();
             println!(
                 "Setlist lookup complete: {} dirs fetched, {} titles updated, {} errors",
@@ -479,8 +483,7 @@ fn main() -> Result<()> {
         }
 
         Commands::Rescore => {
-            let result = setbreak::analyzer::rescore_tracks(&db)
-                .context("Rescore failed")?;
+            let result = setbreak::analyzer::rescore_tracks(&db).context("Rescore failed")?;
             println!("Rescore complete: {} tracks updated", result.rescored);
         }
 
@@ -500,11 +503,23 @@ fn main() -> Result<()> {
             }
         }
 
-        Commands::Top { score, limit, song, min_duration, all_types } => {
+        Commands::Top {
+            score,
+            limit,
+            song,
+            min_duration,
+            all_types,
+        } => {
             let min_dur_secs = min_duration.map(|m| m * 60.0);
-            let results = db.query_top(
-                score.column(), limit, song.as_deref(), min_dur_secs, !all_types,
-            ).context("Query failed")?;
+            let results = db
+                .query_top(
+                    score.column(),
+                    limit,
+                    song.as_deref(),
+                    min_dur_secs,
+                    !all_types,
+                )
+                .context("Query failed")?;
 
             if results.is_empty() {
                 println!("No results found.");
@@ -516,8 +531,14 @@ fn main() -> Result<()> {
             print_score_table(&results, Some(&score));
         }
 
-        Commands::Compare { song, sort, limit, all_types } => {
-            let results = db.query_compare(&song, sort.column(), limit, !all_types)
+        Commands::Compare {
+            song,
+            sort,
+            limit,
+            all_types,
+        } => {
+            let results = db
+                .query_compare(&song, sort.column(), limit, !all_types)
                 .context("Query failed")?;
 
             if results.is_empty() {
@@ -549,7 +570,11 @@ fn main() -> Result<()> {
         }
 
         Commands::Similarity { jobs } => {
-            let workers = if jobs > 0 { jobs } else { config.resolve_workers() };
+            let workers = if jobs > 0 {
+                jobs
+            } else {
+                config.resolve_workers()
+            };
             let result = setbreak::similarity::compute_similarity(&db, workers)
                 .context("Similarity computation failed")?;
             println!(
@@ -559,7 +584,8 @@ fn main() -> Result<()> {
         }
 
         Commands::Similar { song, date, limit } => {
-            let found = db.find_track_id(&song, date.as_deref())
+            let found = db
+                .find_track_id(&song, date.as_deref())
                 .context("Search failed")?;
 
             let (track_id, title, track_date) = match found {
@@ -570,8 +596,7 @@ fn main() -> Result<()> {
                 }
             };
 
-            let results = db.query_similar(track_id, limit)
-                .context("Query failed")?;
+            let results = db.query_similar(track_id, limit).context("Query failed")?;
 
             if results.is_empty() {
                 println!("No similarity data. Run `setbreak similarity` first.");
@@ -584,8 +609,7 @@ fn main() -> Result<()> {
             // Print with distance column
             println!(
                 "{:<25} {:>10} {:>5} {:>6}  {:>4} {:>4} {:>4} {:>4} {:>4} {:>4}",
-                "Song", "Date", "Min", "Dist",
-                "Grv", "Imp", "Eng", "Int", "Bld", "Exp"
+                "Song", "Date", "Min", "Dist", "Grv", "Imp", "Eng", "Int", "Bld", "Exp"
             );
             println!("{}", "-".repeat(95));
 
@@ -615,7 +639,16 @@ fn main() -> Result<()> {
             println!("Dist = cosine distance (0 = identical, lower = more similar)");
         }
 
-        Commands::Chains { sort, date, min_length, min_duration, song, band, limit, detail } => {
+        Commands::Chains {
+            sort,
+            date,
+            min_length,
+            min_duration,
+            song,
+            band,
+            limit,
+            detail,
+        } => {
             let dates = if let Some(ref d) = date {
                 if db.date_has_analysis(d).context("Query failed")? {
                     vec![d.clone()]
@@ -624,7 +657,8 @@ fn main() -> Result<()> {
                     return Ok(());
                 }
             } else {
-                db.get_dates_with_chains_or_setlists().context("Query failed")?
+                db.get_dates_with_chains_or_setlists()
+                    .context("Query failed")?
             };
 
             if dates.is_empty() {
@@ -639,7 +673,8 @@ fn main() -> Result<()> {
                     "phish" | "ph" => "phish",
                     "bts" | "built to spill" => "built_to_spill",
                     other => other,
-                }.to_string()
+                }
+                .to_string()
             });
 
             // Collect chains from all dates (prefer setlist segue data when available)
@@ -648,7 +683,9 @@ fn main() -> Result<()> {
                 let tracks = db.query_show(d).context("Query failed")?;
                 // If band filter active, skip shows that don't match
                 if let Some(ref substr) = band_path_substr {
-                    if !tracks.is_empty() && !tracks[0].file_path.to_lowercase().contains(substr.as_str()) {
+                    if !tracks.is_empty()
+                        && !tracks[0].file_path.to_lowercase().contains(substr.as_str())
+                    {
                         continue;
                     }
                 }
@@ -675,26 +712,46 @@ fn main() -> Result<()> {
                 return Ok(());
             }
 
-            println!("Top {} segue chains (sorted by {}):", chains.len(), sort.label());
+            println!(
+                "Top {} segue chains (sorted by {}):",
+                chains.len(),
+                sort.label()
+            );
             println!();
             print_chain_table(&chains, &sort);
 
             if detail {
                 println!();
                 for c in &chains {
-                    println!("=== {} ({}) — {} songs, {:.1} min ===", c.chain_title(), c.date, c.chain_length, c.duration_min);
+                    println!(
+                        "=== {} ({}) — {} songs, {:.1} min ===",
+                        c.chain_title(),
+                        c.date,
+                        c.chain_length,
+                        c.duration_min
+                    );
                     print_score_table(&c.tracks, None);
                     println!();
                 }
             }
         }
 
-        Commands::Discover { band, refresh, year, limit } => {
+        Commands::Discover {
+            band,
+            refresh,
+            year,
+            limit,
+        } => {
             let result = setbreak::discovery::discover_missing_shows(
-                &db, &band, refresh, year.as_deref(), limit,
+                &db,
+                &band,
+                refresh,
+                year.as_deref(),
+                limit,
                 config.archive.cache_ttl_days,
                 config.archive.rate_limit_ms,
-            ).context("Discovery failed")?;
+            )
+            .context("Discovery failed")?;
 
             println!(
                 "Collection: {} ({} total shows in archive)",
@@ -702,7 +759,8 @@ fn main() -> Result<()> {
             );
             println!(
                 "Local shows: {} dates | Missing: {} dates",
-                result.local_count, result.missing.len()
+                result.local_count,
+                result.missing.len()
             );
             println!();
 
@@ -714,17 +772,26 @@ fn main() -> Result<()> {
                 println!("Download with: setbreak download --band {} <DATE>", band);
                 let registry = setbreak::bands::registry();
                 if registry.is_sbd_stream_only(&band) {
-                    println!("  (SBD/matrix sources are stream-only; download will auto-select audience tapes)");
+                    println!(
+                        "  (SBD/matrix sources are stream-only; download will auto-select audience tapes)"
+                    );
                 }
             }
         }
 
-        Commands::Download { band, date, dest, dry_run } => {
+        Commands::Download {
+            band,
+            date,
+            dest,
+            dry_run,
+        } => {
             let registry = setbreak::bands::registry();
 
             // Resolve band → archive strategy
-            let strategy = registry.resolve_archive_query(&band)
-                .context(format!("Unknown band '{}' or no archive.org strategy configured", band))?;
+            let strategy = registry.resolve_archive_query(&band).context(format!(
+                "Unknown band '{}' or no archive.org strategy configured",
+                band
+            ))?;
             let collection = match strategy {
                 setbreak::bands::ArchiveStrategy::Collection(c) => c.as_str(),
                 setbreak::bands::ArchiveStrategy::Creator(c) => c.as_str(),
@@ -732,17 +799,23 @@ fn main() -> Result<()> {
             let sbd_restricted = registry.is_sbd_stream_only(&band);
 
             // Pick best source
-            let result = setbreak::discovery::pick_best_source(&db, collection, &date, sbd_restricted)
-                .context("Failed to query archive shows")?;
+            let result =
+                setbreak::discovery::pick_best_source(&db, collection, &date, sbd_restricted)
+                    .context("Failed to query archive shows")?;
 
             match result {
                 None => {
                     if sbd_restricted {
                         println!("No downloadable recordings found for {} on {}.", band, date);
-                        println!("(SBD/matrix sources are stream-only for this band; no audience tapes available)");
+                        println!(
+                            "(SBD/matrix sources are stream-only for this band; no audience tapes available)"
+                        );
                     } else {
                         println!("No recordings found for {} on {}.", band, date);
-                        println!("Try running `setbreak discover --band {}` first to populate the cache.", band);
+                        println!(
+                            "Try running `setbreak discover --band {}` first to populate the cache.",
+                            band
+                        );
                     }
                 }
                 Some((identifier, source_q, format_q, skipped_sbd)) => {
@@ -757,7 +830,10 @@ fn main() -> Result<()> {
                     if dry_run {
                         let glob = setbreak::discovery::download_glob(format_q);
                         println!("\nWould run:");
-                        println!("  ia download {} --glob='{}' --no-directories", identifier, glob);
+                        println!(
+                            "  ia download {} --glob='{}' --no-directories",
+                            identifier, glob
+                        );
                     } else {
                         // Resolve destination directory
                         let dest_dir = dest.unwrap_or_else(|| {
@@ -772,8 +848,10 @@ fn main() -> Result<()> {
                         let dest_path = format!("{}/{}", dest_dir, identifier);
 
                         println!("Downloading to: {}", dest_path);
-                        println!("Running: ia download {} --destdir={} --glob='{}'",
-                            identifier, dest_dir, glob);
+                        println!(
+                            "Running: ia download {} --destdir={} --glob='{}'",
+                            identifier, dest_dir, glob
+                        );
 
                         let status = std::process::Command::new("ia")
                             .args(["download", &identifier,
@@ -793,7 +871,11 @@ fn main() -> Result<()> {
             }
         }
 
-        Commands::ImportSetlists { path, source, dry_run } => {
+        Commands::ImportSetlists {
+            path,
+            source,
+            dry_run,
+        } => {
             if dry_run {
                 println!("DRY RUN — no changes will be written to the database");
             }
@@ -807,7 +889,8 @@ fn main() -> Result<()> {
             let entries = setbreak::setlist::import::parse_gdshowsdb(data_path)
                 .context("Failed to parse setlist data")?;
 
-            let show_count = entries.iter()
+            let show_count = entries
+                .iter()
                 .map(|e| &e.date)
                 .collect::<std::collections::HashSet<_>>()
                 .len();
@@ -816,8 +899,10 @@ fn main() -> Result<()> {
 
             if dry_run {
                 // Show a sample
-                let mut by_date: std::collections::BTreeMap<&str, Vec<&setbreak::setlist::import::SetlistEntry>> =
-                    std::collections::BTreeMap::new();
+                let mut by_date: std::collections::BTreeMap<
+                    &str,
+                    Vec<&setbreak::setlist::import::SetlistEntry>,
+                > = std::collections::BTreeMap::new();
                 for e in &entries {
                     by_date.entry(&e.date).or_default().push(e);
                 }
@@ -855,7 +940,8 @@ fn main() -> Result<()> {
                 &db,
                 config.archive.rate_limit_ms,
                 dry_run,
-            ).context("Failed to fetch Phish setlists from phish.in")?;
+            )
+            .context("Failed to fetch Phish setlists from phish.in")?;
 
             println!(
                 "Phish setlists: {} shows, {} songs imported",
@@ -864,7 +950,8 @@ fn main() -> Result<()> {
         }
 
         Commands::Classify => {
-            let tracks = db.get_tracks_for_classify()
+            let tracks = db
+                .get_tracks_for_classify()
                 .context("Failed to load tracks for classification")?;
             let total = tracks.len();
 
@@ -897,7 +984,8 @@ fn main() -> Result<()> {
         }
 
         Commands::QualityCheck => {
-            let tracks = db.get_tracks_for_quality_check()
+            let tracks = db
+                .get_tracks_for_quality_check()
                 .context("Failed to load tracks for quality check")?;
             let total = tracks.len();
 
@@ -907,7 +995,8 @@ fn main() -> Result<()> {
             let mut garbage = 0usize;
 
             for (id, file_path, snr_db, clipping_ratio) in &tracks {
-                let quality = setbreak::analyzer::classify_data_quality(*snr_db, *clipping_ratio, file_path);
+                let quality =
+                    setbreak::analyzer::classify_data_quality(*snr_db, *clipping_ratio, file_path);
                 match quality {
                     "ok" => ok += 1,
                     "suspect" => suspect += 1,
@@ -928,7 +1017,11 @@ fn main() -> Result<()> {
         }
 
         Commands::ExtractBoundaries { jobs } => {
-            let workers = if jobs > 0 { jobs } else { config.resolve_workers() };
+            let workers = if jobs > 0 {
+                jobs
+            } else {
+                config.resolve_workers()
+            };
             let result = setbreak::analyzer::extract_boundaries(&db, workers)
                 .context("Boundary extraction failed")?;
             println!(
@@ -937,15 +1030,26 @@ fn main() -> Result<()> {
             );
         }
 
-        Commands::Segues { min_confidence, band, date, limit, detail } => {
+        Commands::Segues {
+            min_confidence,
+            band,
+            date,
+            limit,
+            detail,
+        } => {
             setbreak::segues::run_segue_detection(
-                &db, min_confidence, band.as_deref(), date.as_deref(), limit, detail,
-            ).context("Segue detection failed")?;
+                &db,
+                min_confidence,
+                band.as_deref(),
+                date.as_deref(),
+                limit,
+                detail,
+            )
+            .context("Segue detection failed")?;
         }
 
         Commands::Sql { query } => {
-            let mut stmt = db.conn.prepare(&query)
-                .context("SQL prepare failed")?;
+            let mut stmt = db.conn.prepare(&query).context("SQL prepare failed")?;
             let col_count = stmt.column_count();
             let col_names: Vec<String> = (0..col_count)
                 .map(|i| stmt.column_name(i).unwrap_or("?").to_string())
@@ -955,12 +1059,12 @@ fn main() -> Result<()> {
             let mut rows_data: Vec<Vec<String>> = Vec::new();
             let mut widths: Vec<usize> = col_names.iter().map(|n| n.len()).collect();
 
-            let mut rows = stmt.query(rusqlite::params![])
+            let mut rows = stmt
+                .query(rusqlite::params![])
                 .context("SQL query failed")?;
             while let Some(row) = rows.next()? {
-                let mut row_strs = Vec::with_capacity(col_count);
-                for i in 0..col_count {
-                    let val: String = match row.get_ref(i)? {
+                let row_strs: Vec<String> = (0..col_count)
+                    .map(|i| match row.get_ref(i).unwrap() {
                         rusqlite::types::ValueRef::Null => "NULL".to_string(),
                         rusqlite::types::ValueRef::Integer(n) => n.to_string(),
                         rusqlite::types::ValueRef::Real(f) => {
@@ -973,24 +1077,29 @@ fn main() -> Result<()> {
                         rusqlite::types::ValueRef::Text(s) => {
                             String::from_utf8_lossy(s).to_string()
                         }
-                        rusqlite::types::ValueRef::Blob(b) => format!("<blob {}B>", b.len()),
-                    };
-                    if val.len() > widths[i] {
-                        widths[i] = val.len();
-                    }
-                    row_strs.push(val);
+                        rusqlite::types::ValueRef::Blob(b) => {
+                            format!("<blob {}B>", b.len())
+                        }
+                    })
+                    .collect();
+                for (w, val) in widths.iter_mut().zip(&row_strs) {
+                    *w = (*w).max(val.len());
                 }
                 rows_data.push(row_strs);
             }
 
             // Cap column widths at 40 for readability
             for w in widths.iter_mut() {
-                if *w > 40 { *w = 40; }
+                if *w > 40 {
+                    *w = 40;
+                }
             }
 
             // Print header
             for (i, name) in col_names.iter().enumerate() {
-                if i > 0 { print!("  "); }
+                if i > 0 {
+                    print!("  ");
+                }
                 print!("{:>width$}", name, width = widths[i]);
             }
             println!();
@@ -1000,7 +1109,9 @@ fn main() -> Result<()> {
             // Print rows
             for row_strs in &rows_data {
                 for (i, val) in row_strs.iter().enumerate() {
-                    if i > 0 { print!("  "); }
+                    if i > 0 {
+                        print!("  ");
+                    }
                     let display = if val.len() > widths[i] {
                         format!("{}...", &val[..widths[i] - 3])
                     } else {
@@ -1017,7 +1128,8 @@ fn main() -> Result<()> {
         Commands::Rank { song, date } => {
             use setbreak::db::columns::SCORE_COLUMNS;
 
-            let found = db.find_track_id(&song, date.as_deref())
+            let found = db
+                .find_track_id(&song, date.as_deref())
                 .context("Search failed")?;
             let (track_id, title, track_date) = match found {
                 Some(t) => t,
@@ -1032,16 +1144,16 @@ fn main() -> Result<()> {
 
             // Get this track's scores and compute percentiles
             let score_names = [
-                ("energy",        "Energy"),
-                ("intensity",     "Intensity"),
-                ("groove",        "Groove"),
+                ("energy", "Energy"),
+                ("intensity", "Intensity"),
+                ("groove", "Groove"),
                 ("improvisation", "Improvisation"),
-                ("tightness",     "Tightness"),
+                ("tightness", "Tightness"),
                 ("build_quality", "Build Quality"),
-                ("exploratory",   "Exploratory"),
+                ("exploratory", "Exploratory"),
                 ("transcendence", "Transcendence"),
-                ("valence",       "Valence"),
-                ("arousal",       "Arousal"),
+                ("valence", "Valence"),
+                ("arousal", "Arousal"),
             ];
 
             let sql = format!(
@@ -1068,11 +1180,11 @@ fn main() -> Result<()> {
                     col = col,
                     NOT_GARBAGE = setbreak::db::columns::NOT_GARBAGE,
                 );
-                let (below, total): (i64, i64) = db.conn.query_row(
-                    &pctl_sql,
-                    rusqlite::params![val],
-                    |row| Ok((row.get(0)?, row.get(1)?)),
-                )?;
+                let (below, total): (i64, i64) =
+                    db.conn
+                        .query_row(&pctl_sql, rusqlite::params![val], |row| {
+                            Ok((row.get(0)?, row.get(1)?))
+                        })?;
 
                 let pctl = if total > 0 {
                     100.0 * below as f64 / total as f64
@@ -1097,17 +1209,23 @@ fn main() -> Result<()> {
             println!("Duration: {:.1} min", dur);
         }
 
-        Commands::Dist { score, bins, song, live_only, min_duration } => {
+        Commands::Dist {
+            score,
+            bins,
+            song,
+            live_only,
+            min_duration,
+        } => {
             let col = score.column();
             let min_dur_secs = min_duration.map(|m| m * 60.0);
 
             // Build WHERE clause
             let mut where_parts = vec![
                 format!("a.{col} IS NOT NULL"),
-                format!("{}", setbreak::db::columns::NOT_GARBAGE),
+                setbreak::db::columns::NOT_GARBAGE.to_string(),
             ];
             if live_only {
-                where_parts.push(format!("{}", setbreak::db::columns::LIVE_ONLY));
+                where_parts.push(setbreak::db::columns::LIVE_ONLY.to_string());
             }
             if let Some(dur) = min_dur_secs {
                 where_parts.push(format!("a.duration >= {dur}"));
@@ -1124,13 +1242,22 @@ fn main() -> Result<()> {
             );
             let (min_val, max_val, total, mean, variance): (f64, f64, i64, f64, f64) =
                 db.conn.query_row(&stats_sql, [], |row| {
-                    Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?))
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                    ))
                 })?;
 
             let std_dev = variance.max(0.0).sqrt();
 
             println!("Distribution: {} ({} tracks)", score.label(), total);
-            println!("  min={:.1}  mean={:.1}  std={:.1}  max={:.1}", min_val, mean, std_dev, max_val);
+            println!(
+                "  min={:.1}  mean={:.1}  std={:.1}  max={:.1}",
+                min_val, mean, std_dev, max_val
+            );
             println!();
 
             // Build histogram buckets
@@ -1152,10 +1279,9 @@ fn main() -> Result<()> {
 
             let mut stmt = db.conn.prepare(&hist_sql)?;
             let mut bucket_counts = vec![0i64; bins];
-            let rows = stmt.query_map(
-                rusqlite::params![min_val, bin_width],
-                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
-            )?;
+            let rows = stmt.query_map(rusqlite::params![min_val, bin_width], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?))
+            })?;
             for r in rows {
                 let (bucket, count) = r?;
                 let idx = (bucket as usize).min(bins - 1);
@@ -1176,18 +1302,19 @@ fn main() -> Result<()> {
                      ORDER BY a.{col} DESC LIMIT 1"
                 );
                 let pattern = format!("%{s}%");
-                let val: Option<f64> = db.conn.query_row(
-                    &song_sql, rusqlite::params![pattern], |row| row.get(0),
-                ).ok();
-                val.map(|v| ((v - min_val) / bin_width).floor() as usize).map(|b| b.min(bins - 1))
+                let val: Option<f64> = db
+                    .conn
+                    .query_row(&song_sql, rusqlite::params![pattern], |row| row.get(0))
+                    .ok();
+                val.map(|v| ((v - min_val) / bin_width).floor() as usize)
+                    .map(|b| b.min(bins - 1))
             } else {
                 None
             };
 
-            for i in 0..bins {
+            for (i, &count) in bucket_counts.iter().enumerate() {
                 let lo = min_val + i as f64 * bin_width;
                 let hi = lo + bin_width;
-                let count = bucket_counts[i];
                 let bar_len = if max_count > 0 {
                     (count as f64 / max_count as f64 * bar_max as f64) as usize
                 } else {
@@ -1197,7 +1324,11 @@ fn main() -> Result<()> {
                 let bar: String = "#".repeat(bar_len);
                 println!(
                     "{:>5.0}-{:<5.0} {:>5} {}{} {}",
-                    lo, hi, count, marker, bar,
+                    lo,
+                    hi,
+                    count,
+                    marker,
+                    bar,
                     if count > 0 {
                         format!("{:.1}%", 100.0 * count as f64 / total as f64)
                     } else {
@@ -1212,7 +1343,12 @@ fn main() -> Result<()> {
             }
         }
 
-        Commands::Correlate { score, live_only, min_duration, limit } => {
+        Commands::Correlate {
+            score,
+            live_only,
+            min_duration,
+            limit,
+        } => {
             use setbreak::db::columns::ANALYSIS_SCHEMA;
 
             let target_col = score.column();
@@ -1221,10 +1357,10 @@ fn main() -> Result<()> {
             // Build WHERE clause
             let mut where_parts = vec![
                 format!("a.{target_col} IS NOT NULL"),
-                format!("{}", setbreak::db::columns::NOT_GARBAGE),
+                setbreak::db::columns::NOT_GARBAGE.to_string(),
             ];
             if live_only {
-                where_parts.push(format!("{}", setbreak::db::columns::LIVE_ONLY));
+                where_parts.push(setbreak::db::columns::LIVE_ONLY.to_string());
             }
             if let Some(dur) = min_dur_secs {
                 where_parts.push(format!("a.duration >= {dur}"));
@@ -1232,14 +1368,19 @@ fn main() -> Result<()> {
             let where_clause = where_parts.join(" AND ");
 
             // Collect numeric feature columns (skip TEXT/JSON columns and the target itself)
-            let feature_cols: Vec<&str> = ANALYSIS_SCHEMA.iter()
+            let feature_cols: Vec<&str> = ANALYSIS_SCHEMA
+                .iter()
                 .filter(|c| c.sql_type == "REAL" || c.sql_type == "INT")
                 .filter(|c| c.name != target_col)
                 .filter(|c| !c.name.ends_with("_score")) // skip other scores
                 .map(|c| c.name)
                 .collect();
 
-            println!("Correlating {} features with {}...", feature_cols.len(), score.label());
+            println!(
+                "Correlating {} features with {}...",
+                feature_cols.len(),
+                score.label()
+            );
             println!();
 
             // Compute Pearson correlation for each feature
@@ -1272,17 +1413,21 @@ fn main() -> Result<()> {
                 });
 
                 if let Ok((n, mean_x, mean_y, mean_xy, mean_x2, mean_y2)) = result {
-                    if n < 100 { continue; } // skip sparse features
+                    if n < 100 {
+                        continue;
+                    } // skip sparse features
                     let cov = mean_xy - mean_x * mean_y;
                     let var_x = mean_x2 - mean_x * mean_x;
                     let var_y = mean_y2 - mean_y * mean_y;
                     if var_x > 1e-10 && var_y > 1e-10 {
                         let r = cov / (var_x.sqrt() * var_y.sqrt());
-                        let category = ANALYSIS_SCHEMA.iter()
+                        let category = ANALYSIS_SCHEMA
+                            .iter()
                             .find(|c| c.name == feat)
                             .map(|c| c.category)
                             .unwrap_or("?");
-                        let desc = ANALYSIS_SCHEMA.iter()
+                        let desc = ANALYSIS_SCHEMA
+                            .iter()
                             .find(|c| c.name == feat)
                             .map(|c| c.description)
                             .unwrap_or("");
@@ -1294,14 +1439,20 @@ fn main() -> Result<()> {
             // Sort by absolute correlation
             correlations.sort_by(|a, b| b.1.abs().partial_cmp(&a.1.abs()).unwrap());
 
-            println!("{:<35} {:>6} {:<15} {}", "Feature", "r", "Category", "Description");
+            println!(
+                "{:<35} {:>6} {:<15} Description",
+                "Feature", "r", "Category"
+            );
             println!("{}", "-".repeat(100));
 
             for (feat, r, cat, desc) in correlations.iter().take(limit) {
                 let sign = if *r > 0.0 { "+" } else { "-" };
                 println!(
                     "{:<35} {}{:.3} {:<15} {}",
-                    feat, sign, r.abs(), cat,
+                    feat,
+                    sign,
+                    r.abs(),
+                    cat,
                     if desc.len() > 35 { &desc[..35] } else { desc }
                 );
             }
@@ -1309,25 +1460,32 @@ fn main() -> Result<()> {
             println!("{} features analyzed", correlations.len());
         }
 
-        Commands::Schema { grep, category, scores } => {
+        Commands::Schema {
+            grep,
+            category,
+            scores,
+        } => {
             use setbreak::db::columns::ANALYSIS_SCHEMA;
 
-            let columns: Vec<_> = ANALYSIS_SCHEMA.iter().filter(|c| {
-                if scores {
-                    return c.category == "Score";
-                }
-                if let Some(ref pat) = grep {
-                    let pat_lower = pat.to_lowercase();
-                    return c.name.to_lowercase().contains(&pat_lower)
-                        || c.category.to_lowercase().contains(&pat_lower)
-                        || c.description.to_lowercase().contains(&pat_lower);
-                }
-                if let Some(ref cat) = category {
-                    let cat_lower = cat.to_lowercase();
-                    return c.category.to_lowercase().contains(&cat_lower);
-                }
-                true
-            }).collect();
+            let columns: Vec<_> = ANALYSIS_SCHEMA
+                .iter()
+                .filter(|c| {
+                    if scores {
+                        return c.category == "Score";
+                    }
+                    if let Some(ref pat) = grep {
+                        let pat_lower = pat.to_lowercase();
+                        return c.name.to_lowercase().contains(&pat_lower)
+                            || c.category.to_lowercase().contains(&pat_lower)
+                            || c.description.to_lowercase().contains(&pat_lower);
+                    }
+                    if let Some(ref cat) = category {
+                        let cat_lower = cat.to_lowercase();
+                        return c.category.to_lowercase().contains(&cat_lower);
+                    }
+                    true
+                })
+                .collect();
 
             if columns.is_empty() {
                 println!("No matching columns found.");
@@ -1342,26 +1500,26 @@ fn main() -> Result<()> {
                         println!("  {}", "-".repeat(c.category.len()));
                         current_category = c.category;
                     }
-                    println!(
-                        "  {:<40} {:<4}  {}",
-                        c.name, c.sql_type, c.description
-                    );
+                    println!("  {:<40} {:<4}  {}", c.name, c.sql_type, c.description);
                 }
                 println!();
                 println!("{} columns", columns.len());
             }
         }
 
-        Commands::ScoreMatrix { live_only, min_duration } => {
+        Commands::ScoreMatrix {
+            live_only,
+            min_duration,
+        } => {
             use setbreak::db::columns::SCORE_COLUMNS;
             let min_dur_secs = min_duration.map(|m| m * 60.0);
 
             let mut where_parts = vec![
-                format!("{}", setbreak::db::columns::NOT_GARBAGE),
+                setbreak::db::columns::NOT_GARBAGE.to_string(),
                 "a.energy_score IS NOT NULL".to_string(),
             ];
             if live_only {
-                where_parts.push(format!("{}", setbreak::db::columns::LIVE_ONLY));
+                where_parts.push(setbreak::db::columns::LIVE_ONLY.to_string());
             }
             if let Some(dur) = min_dur_secs {
                 where_parts.push(format!("a.duration >= {dur}"));
@@ -1386,7 +1544,9 @@ fn main() -> Result<()> {
             }
 
             // Compute Pearson r for each pair
-            let labels = ["Eng", "Int", "Grv", "Imp", "Tgt", "Bld", "Exp", "Trn", "Val", "Aro"];
+            let labels = [
+                "Eng", "Int", "Grv", "Imp", "Tgt", "Bld", "Exp", "Trn", "Val", "Aro",
+            ];
 
             println!("Score correlation matrix ({} tracks)", n);
             println!();
@@ -1422,10 +1582,7 @@ fn main() -> Result<()> {
             println!("==================");
             println!("Total tracks:     {}", stats.total_tracks);
             println!("Analyzed tracks:  {}", stats.analyzed_tracks);
-            println!(
-                "Total duration:   {:.1} hours",
-                stats.total_duration_hours
-            );
+            println!("Total duration:   {:.1} hours", stats.total_duration_hours);
             println!();
 
             if !stats.formats.is_empty() {
@@ -1451,7 +1608,9 @@ fn main() -> Result<()> {
 /// Pearson correlation coefficient between two equal-length f64 slices.
 fn pearson_r(x: &[f64], y: &[f64]) -> f64 {
     let n = x.len() as f64;
-    if n < 2.0 { return 0.0; }
+    if n < 2.0 {
+        return 0.0;
+    }
     let sum_x: f64 = x.iter().sum();
     let sum_y: f64 = y.iter().sum();
     let sum_xy: f64 = x.iter().zip(y.iter()).map(|(a, b)| a * b).sum();
@@ -1463,7 +1622,11 @@ fn pearson_r(x: &[f64], y: &[f64]) -> f64 {
 }
 
 /// Extract a row of f64 values from a single-row query.
-fn rusqlite_row_to_f64_vec(db: &setbreak::db::Database, sql: &str, track_id: i64) -> Result<Vec<f64>> {
+fn rusqlite_row_to_f64_vec(
+    db: &setbreak::db::Database,
+    sql: &str,
+    track_id: i64,
+) -> Result<Vec<f64>> {
     let mut stmt = db.conn.prepare(sql)?;
     let col_count = stmt.column_count();
     let row = stmt.query_row(rusqlite::params![track_id], |row| {
@@ -1481,8 +1644,7 @@ fn print_score_table(tracks: &[TrackScore], highlight: Option<&ScoreName>) {
     // Header
     println!(
         "{:<25} {:>10} {:>5}  {:>4} {:>4} {:>4} {:>4} {:>4} {:>4} {:>4} {:>4}",
-        "Song", "Date", "Min",
-        "Grv", "Imp", "Eng", "Int", "Tgt", "Bld", "Exp", "Trn"
+        "Song", "Date", "Min", "Grv", "Imp", "Eng", "Int", "Tgt", "Bld", "Exp", "Trn"
     );
     println!("{}", "-".repeat(97));
 
@@ -1524,8 +1686,7 @@ fn print_score_table(tracks: &[TrackScore], highlight: Option<&ScoreName>) {
 fn print_chain_table(chains: &[ChainScore], sort: &ScoreName) {
     println!(
         "{:<40} {:>10} {:>3} {:>5}  {:>4} {:>4} {:>4} {:>4}",
-        "Chain", "Date", "Len", "Min",
-        "Trn", "Imp", "Eng", "Exp"
+        "Chain", "Date", "Len", "Min", "Trn", "Imp", "Eng", "Exp"
     );
     println!("{}", "-".repeat(85));
 
@@ -1558,8 +1719,8 @@ fn print_chain_table(chains: &[ChainScore], sort: &ScoreName) {
 /// Print a table of missing shows from archive.org.
 fn print_missing_shows(shows: &[setbreak::db::models::MissingShow]) {
     println!(
-        "{:<12} {:>6} {:>6} {:>5}  {}",
-        "Date", "Source", "Format", "Tapes", "Identifier"
+        "{:<12} {:>6} {:>6} {:>5}  Identifier",
+        "Date", "Source", "Format", "Tapes"
     );
     println!("{}", "-".repeat(80));
 

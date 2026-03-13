@@ -12,12 +12,9 @@ pub mod similarity;
 
 /// Audio file extensions we support
 pub const SUPPORTED_EXTENSIONS: &[&str] = &[
-    "mp3", "flac", "ogg", "shn", "wav",
-    // Native (symphonia via ferrous-waves)
-    "aif", "aiff",
-    // Native (dedicated Rust crates)
-    "ape", "wv",
-    // Native (symphonia) or ffmpeg fallback
+    "mp3", "flac", "ogg", "shn", "wav", // Native (symphonia via ferrous-waves)
+    "aif", "aiff", // Native (dedicated Rust crates)
+    "ape", "wv", // Native (symphonia) or ffmpeg fallback
     "m4a", "aac", "opus", "dsf", "dff",
 ];
 

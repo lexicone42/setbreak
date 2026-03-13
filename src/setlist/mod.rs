@@ -66,7 +66,8 @@ pub struct SetlistResult {
 /// - Filename differences via disc/track position matching
 pub fn lookup_setlists(db: &Database, dry_run: bool, rate_limit_ms: u64) -> Result<SetlistResult> {
     // Get all tracks missing titles (no parsed_title AND no tag title)
-    let tracks = db.get_tracks_missing_titles()
+    let tracks = db
+        .get_tracks_missing_titles()
         .context("Failed to query tracks missing titles")?;
 
     if tracks.is_empty() {
@@ -88,7 +89,8 @@ pub fn lookup_setlists(db: &Database, dry_run: bool, rate_limit_ms: u64) -> Resu
         if let Some(parent) = path.parent() {
             if let Some(dir_name) = parent.file_name() {
                 let dir = dir_name.to_string_lossy().to_string();
-                let filename = path.file_name()
+                let filename = path
+                    .file_name()
                     .map(|f| f.to_string_lossy().to_string())
                     .unwrap_or_default();
                 by_dir.entry(dir).or_default().push((*track_id, filename));
@@ -113,7 +115,9 @@ pub fn lookup_setlists(db: &Database, dry_run: bool, rate_limit_ms: u64) -> Resu
     let pb = ProgressBar::new(by_dir.len() as u64);
     pb.set_style(
         ProgressStyle::default_bar()
-            .template("{spinner:.green} [{bar:40.cyan/blue}] {pos}/{len} dirs ({eta} remaining) {msg}")
+            .template(
+                "{spinner:.green} [{bar:40.cyan/blue}] {pos}/{len} dirs ({eta} remaining) {msg}",
+            )
             .unwrap()
             .progress_chars("=>-"),
     );
@@ -143,8 +147,9 @@ pub fn lookup_setlists(db: &Database, dry_run: bool, rate_limit_ms: u64) -> Resu
                     let title = match_title(filename, &file_map, &position_map);
                     if let Some((title, method)) = title {
                         if !dry_run {
-                            db.update_parsed_title(*track_id, &title)
-                                .with_context(|| format!("Failed to update title for track {track_id}"))?;
+                            db.update_parsed_title(*track_id, &title).with_context(|| {
+                                format!("Failed to update title for track {track_id}")
+                            })?;
                         }
                         result.titles_updated += 1;
                         log::info!("  {filename} => {title} ({method})");
@@ -357,7 +362,9 @@ fn try_search_fallback(dir_name: &str) -> Result<Option<HashMap<String, String>>
     );
 
     let response: ArchiveSearchResponse = match ureq::get(&url).call() {
-        Ok(mut resp) => resp.body_mut().read_json()
+        Ok(mut resp) => resp
+            .body_mut()
+            .read_json()
             .with_context(|| format!("Failed to parse search JSON for {dir_name}"))?,
         Err(e) => {
             log::debug!("Search request failed for {dir_name}: {e}");
@@ -365,9 +372,7 @@ fn try_search_fallback(dir_name: &str) -> Result<Option<HashMap<String, String>>
         }
     };
 
-    let docs = response.response
-        .and_then(|r| r.docs)
-        .unwrap_or_default();
+    let docs = response.response.and_then(|r| r.docs).unwrap_or_default();
 
     if docs.is_empty() {
         log::debug!("No search results for {creator} {date}");
@@ -382,7 +387,10 @@ fn try_search_fallback(dir_name: &str) -> Result<Option<HashMap<String, String>>
 
             let map = fetch_archive_metadata(identifier)?;
             if !map.is_empty() {
-                log::info!("Search fallback found: {dir_name} → {identifier} ({} files)", map.len());
+                log::info!(
+                    "Search fallback found: {dir_name} → {identifier} ({} files)",
+                    map.len()
+                );
                 return Ok(Some(map));
             }
         }
@@ -473,12 +481,18 @@ mod tests {
     fn test_extract_disc_track_standard() {
         assert_eq!(extract_disc_track("gd69-04-22d1t01.mp3"), Some((1, 1)));
         assert_eq!(extract_disc_track("gd69-04-22d2t05.flac"), Some((2, 5)));
-        assert_eq!(extract_disc_track("phish2013-10-31s1t01.flac"), Some((1, 1)));
+        assert_eq!(
+            extract_disc_track("phish2013-10-31s1t01.flac"),
+            Some((1, 1))
+        );
     }
 
     #[test]
     fn test_extract_disc_track_underscore() {
-        assert_eq!(extract_disc_track("ph150805d1_06_The_Last_Step.mp3"), Some((1, 6)));
+        assert_eq!(
+            extract_disc_track("ph150805d1_06_The_Last_Step.mp3"),
+            Some((1, 6))
+        );
     }
 
     #[test]
@@ -488,7 +502,10 @@ mod tests {
 
     #[test]
     fn test_extract_disc_track_trailing() {
-        assert_eq!(extract_disc_track("Built To Spill 1999-03-08 Boise11.mp3"), Some((0, 11)));
+        assert_eq!(
+            extract_disc_track("Built To Spill 1999-03-08 Boise11.mp3"),
+            Some((0, 11))
+        );
     }
 
     #[test]
@@ -498,9 +515,15 @@ mod tests {
 
     #[test]
     fn test_extract_disc_track_archive_org() {
-        assert_eq!(extract_disc_track("disc one/08 - reggae jam.mp3"), Some((1, 8)));
+        assert_eq!(
+            extract_disc_track("disc one/08 - reggae jam.mp3"),
+            Some((1, 8))
+        );
         assert_eq!(extract_disc_track("disc two/03 - title.flac"), Some((2, 3)));
-        assert_eq!(extract_disc_track("disc three/01 - opener.mp3"), Some((3, 1)));
+        assert_eq!(
+            extract_disc_track("disc three/01 - opener.mp3"),
+            Some((3, 1))
+        );
         assert_eq!(extract_disc_track("Disc One/01 - stab.flac"), Some((1, 1)));
         assert_eq!(extract_disc_track("disc 1/05 - song.mp3"), Some((1, 5)));
     }
@@ -529,7 +552,10 @@ mod tests {
     fn test_match_title_position() {
         let mut file_map = HashMap::new();
         // Archive has phish-prefixed filenames
-        file_map.insert("phish1997-11-16d1t02.flac".to_string(), "Tweezer".to_string());
+        file_map.insert(
+            "phish1997-11-16d1t02.flac".to_string(),
+            "Tweezer".to_string(),
+        );
         let pos_map = build_position_map(&file_map);
 
         // Local has ph-prefixed filenames — different stem but same position
@@ -542,6 +568,9 @@ mod tests {
         let json = r#"{"response":{"docs":[{"identifier":"gd1969-04-22.sbd.miller.88466.sbeok.flac16"}]}}"#;
         let r: ArchiveSearchResponse = serde_json::from_str(json).unwrap();
         let docs = r.response.unwrap().docs.unwrap();
-        assert_eq!(docs[0].identifier.as_deref(), Some("gd1969-04-22.sbd.miller.88466.sbeok.flac16"));
+        assert_eq!(
+            docs[0].identifier.as_deref(),
+            Some("gd1969-04-22.sbd.miller.88466.sbeok.flac16")
+        );
     }
 }

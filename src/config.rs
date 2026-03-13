@@ -49,34 +49,22 @@ impl AppConfig {
     pub fn load() -> Self {
         let config_path = Self::config_path();
         match config_path {
-            Some(path) if path.exists() => {
-                match std::fs::read_to_string(&path) {
-                    Ok(contents) => {
-                        match toml::from_str::<AppConfig>(&contents) {
-                            Ok(config) => {
-                                log::info!("Loaded config from {}", path.display());
-                                config
-                            }
-                            Err(e) => {
-                                log::warn!(
-                                    "Failed to parse {}: {}. Using defaults.",
-                                    path.display(),
-                                    e
-                                );
-                                Self::default()
-                            }
-                        }
+            Some(path) if path.exists() => match std::fs::read_to_string(&path) {
+                Ok(contents) => match toml::from_str::<AppConfig>(&contents) {
+                    Ok(config) => {
+                        log::info!("Loaded config from {}", path.display());
+                        config
                     }
                     Err(e) => {
-                        log::warn!(
-                            "Failed to read {}: {}. Using defaults.",
-                            path.display(),
-                            e
-                        );
+                        log::warn!("Failed to parse {}: {}. Using defaults.", path.display(), e);
                         Self::default()
                     }
+                },
+                Err(e) => {
+                    log::warn!("Failed to read {}: {}. Using defaults.", path.display(), e);
+                    Self::default()
                 }
-            }
+            },
             _ => {
                 log::debug!("No config file found, using defaults");
                 Self::default()
@@ -98,8 +86,7 @@ impl AppConfig {
 
     /// Get the config file path.
     fn config_path() -> Option<PathBuf> {
-        ProjectDirs::from("", "", crate::APP_NAME)
-            .map(|dirs| dirs.config_dir().join("config.toml"))
+        ProjectDirs::from("", "", crate::APP_NAME).map(|dirs| dirs.config_dir().join("config.toml"))
     }
 }
 

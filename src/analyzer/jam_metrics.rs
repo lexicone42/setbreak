@@ -145,13 +145,21 @@ fn groove_score(a: &NewAnalysis) -> f64 {
 
     // 2. Rhythmic consistency (35 pts): flux CV — strongest differentiator
     // Library flux_cv: avg 0.666, tight grooves 0.3-0.5, loose jams 0.8-1.5+
-    let flux_cv = if flux_mean > 0.5 { flux_std / flux_mean } else { 2.0 };
+    let flux_cv = if flux_mean > 0.5 {
+        flux_std / flux_mean
+    } else {
+        2.0
+    };
     let flux_score = ((1.2 - flux_cv) / 1.0).clamp(0.0, 1.0);
     let flux_contrib = flux_score * 35.0;
 
     // 3. Bass steadiness (20 pts): groove lives in the bass
     // Library bass_cv: avg 0.64, range 0.07-1.75
-    let bass_cv = if bass_mean > 0.01 { bass_std / bass_mean } else { 1.5 };
+    let bass_cv = if bass_mean > 0.01 {
+        bass_std / bass_mean
+    } else {
+        1.5
+    };
     let bass_score = ((1.2 - bass_cv) / 1.0).clamp(0.0, 1.0);
     let bass_contrib = bass_score * 20.0;
 
@@ -239,8 +247,7 @@ fn improvisation_score(a: &NewAnalysis) -> f64 {
     let dyn_norm = ((dyn_ent - 0.5) / 0.35).clamp(0.0, 1.0);
     let dyn_contrib = dyn_norm * 10.0;
 
-    let raw = (dur_contrib + epk_contrib + dpk_contrib + tempo_contrib
-        + key_contrib + dyn_contrib)
+    let raw = (dur_contrib + epk_contrib + dpk_contrib + tempo_contrib + key_contrib + dyn_contrib)
         .clamp(0.0, 100.0);
     (raw * duration_gate).clamp(0.0, 100.0)
 }
@@ -262,7 +269,11 @@ fn tightness_score(a: &NewAnalysis) -> f64 {
     // Library: avg CV 0.666, tight songs 0.4-0.7, Drums 0.9-1.7
     let flux_mean = a.spectral_flux_mean.unwrap_or(0.0);
     let flux_std = a.spectral_flux_std.unwrap_or(0.0);
-    let flux_cv = if flux_mean > 0.5 { flux_std / flux_mean } else { 2.0 };
+    let flux_cv = if flux_mean > 0.5 {
+        flux_std / flux_mean
+    } else {
+        2.0
+    };
     // Map: 0.3 → 1.0, 1.1 → 0.0
     let flux_score = ((1.1 - flux_cv) / 0.8).clamp(0.0, 1.0);
     let flux_contrib = flux_score * 25.0;
@@ -277,7 +288,11 @@ fn tightness_score(a: &NewAnalysis) -> f64 {
     // Library: avg CV 0.488, tight songs 0.2-0.5, Drums 0.5-1.2
     let zcr_mean = a.zcr_mean.unwrap_or(0.0);
     let zcr_std = a.zcr_std.unwrap_or(0.0);
-    let zcr_cv = if zcr_mean > 0.001 { zcr_std / zcr_mean } else { 1.5 };
+    let zcr_cv = if zcr_mean > 0.001 {
+        zcr_std / zcr_mean
+    } else {
+        1.5
+    };
     // Map: 0.2 → 1.0, 1.0 → 0.0
     let zcr_score = ((1.0 - zcr_cv) / 0.8).clamp(0.0, 1.0);
     let zcr_contrib = zcr_score * 20.0;
@@ -292,7 +307,11 @@ fn tightness_score(a: &NewAnalysis) -> f64 {
     // 5. Rhythmic presence (15 pts): steady onset rate in groove zone = tight
     // Penalizes Space/ambient (sparse onsets) and chaotic playing (too many).
     // Library: avg 9/sec, groove zone 5-11/sec
-    let onset_rate = if duration > 0.0 { onset_count / duration } else { 0.0 };
+    let onset_rate = if duration > 0.0 {
+        onset_count / duration
+    } else {
+        0.0
+    };
     let rhythm_score = if onset_rate < 3.0 {
         onset_rate / 3.0 // very sparse = not tight
     } else if onset_rate < 5.0 {
@@ -626,9 +645,9 @@ fn exploratory_score(a: &NewAnalysis) -> f64 {
     let section_norm = section_div.clamp(0.0, 1.0);
     let section_contrib = section_norm * 15.0;
 
-    let raw = (chord_contrib + chroma_contrib + oi_contrib + css_contrib
-        + ka_contrib + section_contrib)
-        .clamp(0.0, 100.0);
+    let raw =
+        (chord_contrib + chroma_contrib + oi_contrib + css_contrib + ka_contrib + section_contrib)
+            .clamp(0.0, 100.0);
     (raw * duration_gate).clamp(0.0, 100.0)
 }
 
@@ -695,8 +714,12 @@ fn transcendence_score(a: &NewAnalysis) -> f64 {
     let flux_norm = (flux / 60.0).clamp(0.0, 1.0);
     let flux_contrib = flux_norm * 10.0;
 
-    let raw = (build_contrib + synergy_contrib + energy_contrib + dynamic_contrib
-        + harmonic_contrib + flux_contrib)
+    let raw = (build_contrib
+        + synergy_contrib
+        + energy_contrib
+        + dynamic_contrib
+        + harmonic_contrib
+        + flux_contrib)
         .clamp(0.0, 100.0);
     (raw * duration_gate).clamp(0.0, 100.0)
 }
@@ -804,26 +827,46 @@ mod tests {
             spectral_flux_std: Some(15.0),
             spectral_rolloff_mean: Some(4000.0),
             spectral_rolloff_std: Some(800.0),
-            spectral_flatness_mean: None, spectral_flatness_std: None,
-            spectral_bandwidth_mean: None, spectral_bandwidth_std: None,
-            zcr_mean: None, zcr_std: None,
-            sub_band_bass_mean: None, sub_band_bass_std: None,
-            sub_band_mid_mean: None, sub_band_mid_std: None,
-            sub_band_high_mean: None, sub_band_high_std: None,
-            sub_band_presence_mean: None, sub_band_presence_std: None,
-            mfcc_0_mean: None, mfcc_0_std: None,
-            mfcc_1_mean: None, mfcc_1_std: None,
-            mfcc_2_mean: None, mfcc_2_std: None,
-            mfcc_3_mean: None, mfcc_3_std: None,
-            mfcc_4_mean: None, mfcc_4_std: None,
-            mfcc_5_mean: None, mfcc_5_std: None,
-            mfcc_6_mean: None, mfcc_6_std: None,
-            mfcc_7_mean: None, mfcc_7_std: None,
-            mfcc_8_mean: None, mfcc_8_std: None,
-            mfcc_9_mean: None, mfcc_9_std: None,
-            mfcc_10_mean: None, mfcc_10_std: None,
-            mfcc_11_mean: None, mfcc_11_std: None,
-            mfcc_12_mean: None, mfcc_12_std: None,
+            spectral_flatness_mean: None,
+            spectral_flatness_std: None,
+            spectral_bandwidth_mean: None,
+            spectral_bandwidth_std: None,
+            zcr_mean: None,
+            zcr_std: None,
+            sub_band_bass_mean: None,
+            sub_band_bass_std: None,
+            sub_band_mid_mean: None,
+            sub_band_mid_std: None,
+            sub_band_high_mean: None,
+            sub_band_high_std: None,
+            sub_band_presence_mean: None,
+            sub_band_presence_std: None,
+            mfcc_0_mean: None,
+            mfcc_0_std: None,
+            mfcc_1_mean: None,
+            mfcc_1_std: None,
+            mfcc_2_mean: None,
+            mfcc_2_std: None,
+            mfcc_3_mean: None,
+            mfcc_3_std: None,
+            mfcc_4_mean: None,
+            mfcc_4_std: None,
+            mfcc_5_mean: None,
+            mfcc_5_std: None,
+            mfcc_6_mean: None,
+            mfcc_6_std: None,
+            mfcc_7_mean: None,
+            mfcc_7_std: None,
+            mfcc_8_mean: None,
+            mfcc_8_std: None,
+            mfcc_9_mean: None,
+            mfcc_9_std: None,
+            mfcc_10_mean: None,
+            mfcc_10_std: None,
+            mfcc_11_mean: None,
+            mfcc_11_std: None,
+            mfcc_12_mean: None,
+            mfcc_12_std: None,
             tempo_bpm: Some(120.0),
             beat_count: Some(600),
             onset_count: Some(1200),
@@ -874,50 +917,82 @@ mod tests {
             transition_count: Some(4),
             classification_music_score: Some(0.95),
             hnr: Some(12.0),
-            loudness_std: None, peak_loudness: None,
-            spectral_flux_skewness: None, spectral_centroid_slope: None,
+            loudness_std: None,
+            peak_loudness: None,
+            spectral_flux_skewness: None,
+            spectral_centroid_slope: None,
             energy_buildup_ratio: None,
-            bass_treble_ratio_mean: None, bass_treble_ratio_std: None,
-            onset_density_std: None, loudness_buildup_slope: None,
+            bass_treble_ratio_mean: None,
+            bass_treble_ratio_std: None,
+            onset_density_std: None,
+            loudness_buildup_slope: None,
             peak_energy_time: None,
-            pitch_contour_std: None, pitch_clarity_mean: None,
+            pitch_contour_std: None,
+            pitch_clarity_mean: None,
             pitched_frame_ratio: None,
-            mfcc_flux_mean: None, onset_interval_entropy: None,
+            mfcc_flux_mean: None,
+            onset_interval_entropy: None,
             spectral_centroid_kurtosis: None,
-            bass_energy_slope: None, spectral_bandwidth_slope: None,
+            bass_energy_slope: None,
+            spectral_bandwidth_slope: None,
             loudness_dynamic_spread: None,
             beat_regularity: None,
-            peak_tension: None, tension_range: None,
-            energy_peak_count: None, energy_valley_depth_mean: None,
+            peak_tension: None,
+            tension_range: None,
+            energy_peak_count: None,
+            energy_valley_depth_mean: None,
             rhythmic_periodicity_strength: None,
             spectral_loudness_correlation: None,
-            spectral_skewness_mean: None, spectral_kurtosis_mean: None,
-            spectral_entropy_mean: None, spectral_entropy_std: None,
-            spectral_slope_mean: None, spectral_contrast_json: None,
-            sub_band_flux_bass_mean: None, sub_band_flux_bass_std: None,
-            sub_band_flux_mid_mean: None, sub_band_flux_high_mean: None,
-            tonnetz_json: None, tonnetz_flux_mean: None, chroma_flux_mean: None,
-            beat_pattern_json: None, syncopation: None,
-            pulse_clarity: None, offbeat_ratio: None,
-            spectral_spread_mean: None, spectral_spread_std: None,
-            spectral_crest_mean: None, spectral_crest_std: None,
-            roughness_mean: None, roughness_std: None,
-            mfcc_delta_mean_json: None, mfcc_delta_delta_mean_json: None,
-            stereo_width_mean: None, stereo_width_std: None,
-            attack_time_mean: None, attack_time_std: None,
-            decay_time_mean: None, decay_time_std: None,
-            onset_strength_mean: None, onset_strength_std: None,
+            spectral_skewness_mean: None,
+            spectral_kurtosis_mean: None,
+            spectral_entropy_mean: None,
+            spectral_entropy_std: None,
+            spectral_slope_mean: None,
+            spectral_contrast_json: None,
+            sub_band_flux_bass_mean: None,
+            sub_band_flux_bass_std: None,
+            sub_band_flux_mid_mean: None,
+            sub_band_flux_high_mean: None,
+            tonnetz_json: None,
+            tonnetz_flux_mean: None,
+            chroma_flux_mean: None,
+            beat_pattern_json: None,
+            syncopation: None,
+            pulse_clarity: None,
+            offbeat_ratio: None,
+            spectral_spread_mean: None,
+            spectral_spread_std: None,
+            spectral_crest_mean: None,
+            spectral_crest_std: None,
+            roughness_mean: None,
+            roughness_std: None,
+            mfcc_delta_mean_json: None,
+            mfcc_delta_delta_mean_json: None,
+            stereo_width_mean: None,
+            stereo_width_std: None,
+            attack_time_mean: None,
+            attack_time_std: None,
+            decay_time_mean: None,
+            decay_time_std: None,
+            onset_strength_mean: None,
+            onset_strength_std: None,
             onset_strength_skewness: None,
             swing_ratio: None,
-            microtiming_deviation_mean: None, microtiming_deviation_std: None,
+            microtiming_deviation_mean: None,
+            microtiming_deviation_std: None,
             microtiming_bias: None,
             temporal_modulation_json: None,
             chroma_self_similarity_bandwidth: None,
-            harmonic_percussive_ratio: None, chromagram_entropy: None,
-            spectral_contrast_slope: None, spectral_contrast_range: None,
-            onset_strength_contour_json: None, section_diversity_score: None,
-            dynamics_entropy: None, dynamics_slope: None,
-            dynamics_peak_count: None, key_change_count: None,
+            harmonic_percussive_ratio: None,
+            chromagram_entropy: None,
+            spectral_contrast_slope: None,
+            spectral_contrast_range: None,
+            onset_strength_contour_json: None,
+            section_diversity_score: None,
+            dynamics_entropy: None,
+            dynamics_slope: None,
+            dynamics_peak_count: None,
+            key_change_count: None,
             valence_score: None,
             arousal_score: None,
             energy_score: None,
@@ -928,8 +1003,10 @@ mod tests {
             build_quality_score: None,
             exploratory_score: None,
             transcendence_score: None,
-            tail_rms_db: None, tail_silence_pct: None,
-            head_rms_db: None, head_silence_pct: None,
+            tail_rms_db: None,
+            tail_silence_pct: None,
+            head_rms_db: None,
+            head_silence_pct: None,
         }
     }
 
@@ -939,11 +1016,16 @@ mod tests {
         compute_jam_scores_from_scalars(&mut a, None);
 
         for (name, val) in [
-            ("energy", a.energy_score), ("intensity", a.intensity_score),
-            ("groove", a.groove_score), ("improvisation", a.improvisation_score),
-            ("tightness", a.tightness_score), ("build_quality", a.build_quality_score),
-            ("exploratory", a.exploratory_score), ("transcendence", a.transcendence_score),
-            ("valence", a.valence_score), ("arousal", a.arousal_score),
+            ("energy", a.energy_score),
+            ("intensity", a.intensity_score),
+            ("groove", a.groove_score),
+            ("improvisation", a.improvisation_score),
+            ("tightness", a.tightness_score),
+            ("build_quality", a.build_quality_score),
+            ("exploratory", a.exploratory_score),
+            ("transcendence", a.transcendence_score),
+            ("valence", a.valence_score),
+            ("arousal", a.arousal_score),
         ] {
             let v = val.unwrap();
             assert!((0.0..=100.0).contains(&v), "{name}={v}");
@@ -980,7 +1062,11 @@ mod tests {
         a.sub_band_bass_std = Some(0.0);
 
         assert!(energy_score(&a) < 10.0, "energy={}", energy_score(&a));
-        assert!(intensity_score(&a) < 10.0, "intensity={}", intensity_score(&a));
+        assert!(
+            intensity_score(&a) < 10.0,
+            "intensity={}",
+            intensity_score(&a)
+        );
         assert!(groove_score(&a) < 10.0, "groove={}", groove_score(&a));
     }
 
@@ -1001,9 +1087,9 @@ mod tests {
         // Two build→peak→release cycles
         let windows = vec![
             0.1, 0.3, 0.5, 0.7, 0.9, // first build
-            0.3, 0.2,                   // drop
-            0.2, 0.4, 0.6, 0.8, 1.0,   // second build
-            0.4,                        // drop
+            0.3, 0.2, // drop
+            0.2, 0.4, 0.6, 0.8, 1.0, // second build
+            0.4, // drop
         ];
         let arcs = detect_arcs(&windows);
         assert!(arcs.len() >= 2, "expected >= 2 arcs, got {}", arcs.len());
@@ -1086,7 +1172,10 @@ mod tests {
         }
 
         let score = build_quality_from_segments(&energies, duration);
-        assert!(score > 50.0, "multi-arc 10-min jam should score > 50, got {score}");
+        assert!(
+            score > 50.0,
+            "multi-arc 10-min jam should score > 50, got {score}"
+        );
     }
 
     #[test]
@@ -1097,7 +1186,10 @@ mod tests {
         let segments = vec![(0.0, 0.5), (30.0, 0.7), (60.0, 0.9)];
         let score = build_quality_score(&a, Some(&segments));
         let fallback = build_quality_score_fallback(&a);
-        assert!((score - fallback).abs() < 0.01, "short track should use fallback");
+        assert!(
+            (score - fallback).abs() < 0.01,
+            "short track should use fallback"
+        );
     }
 
     #[test]
@@ -1105,18 +1197,35 @@ mod tests {
         let a = base_analysis();
         let score = build_quality_score(&a, None);
         let fallback = build_quality_score_fallback(&a);
-        assert!((score - fallback).abs() < 0.01, "no segments should use fallback");
+        assert!(
+            (score - fallback).abs() < 0.01,
+            "no segments should use fallback"
+        );
     }
 
     #[test]
     fn test_bucket_and_smooth_basic() {
         // 90 seconds of energy data, should produce 3 windows of 30s each
         let energies: Vec<(f64, f64)> = (0..90)
-            .map(|t| (t as f64, if t < 30 { 0.2 } else if t < 60 { 0.5 } else { 0.8 }))
+            .map(|t| {
+                (
+                    t as f64,
+                    if t < 30 {
+                        0.2
+                    } else if t < 60 {
+                        0.5
+                    } else {
+                        0.8
+                    },
+                )
+            })
             .collect();
         let windows = bucket_and_smooth(&energies, 90.0);
         assert_eq!(windows.len(), 3, "90s / 30s = 3 windows");
         // After smoothing, middle window should be roughly average of all three
-        assert!(windows[1] > 0.3 && windows[1] < 0.7, "middle should be blended");
+        assert!(
+            windows[1] > 0.3 && windows[1] < 0.7,
+            "middle should be blended"
+        );
     }
 }

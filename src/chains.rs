@@ -5,9 +5,7 @@ use crate::db::models::{ChainScore, TrackScore};
 /// Does NOT match bare ">" without a space prefix (avoids false positives on titles like "Alligator>").
 fn has_segue_marker(title: &str) -> bool {
     let t = title.trim_end();
-    t.ends_with("-->")
-        || t.ends_with("->")
-        || t.ends_with(" >")
+    t.ends_with("-->") || t.ends_with("->") || t.ends_with(" >")
 }
 
 /// Detect segue chains using canonical setlist data as the authoritative source.
@@ -43,9 +41,7 @@ pub fn detect_chains_with_setlist(
                 .unwrap_or_else(|| has_segue_marker(&prev.title))
         };
 
-        if current_chain.is_empty() {
-            current_chain.push(track);
-        } else if prev_segued {
+        if current_chain.is_empty() || prev_segued {
             current_chain.push(track);
         } else {
             if current_chain.len() >= min_length {
@@ -159,9 +155,7 @@ pub fn filter_and_sort_chains(
 
     if let Some(pattern) = song_filter {
         let p = pattern.to_lowercase();
-        chains.retain(|c| {
-            c.songs.iter().any(|s| s.to_lowercase().contains(&p))
-        });
+        chains.retain(|c| c.songs.iter().any(|s| s.to_lowercase().contains(&p)));
     }
 
     // Sort by the requested column (descending)
@@ -180,7 +174,11 @@ pub fn filter_and_sort_chains(
         _ => |c| c.transcendence, // default
     };
 
-    chains.sort_by(|a, b| score_fn(b).partial_cmp(&score_fn(a)).unwrap_or(std::cmp::Ordering::Equal));
+    chains.sort_by(|a, b| {
+        score_fn(b)
+            .partial_cmp(&score_fn(a))
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     chains.truncate(limit);
     chains
 }
@@ -235,7 +233,10 @@ mod tests {
         let chains = detect_chains(&tracks, 2);
         assert_eq!(chains.len(), 1);
         assert_eq!(chains[0].chain_length, 2);
-        assert_eq!(chains[0].songs, vec!["Scarlet Begonias", "Fire on the Mountain"]);
+        assert_eq!(
+            chains[0].songs,
+            vec!["Scarlet Begonias", "Fire on the Mountain"]
+        );
         // Duration-weighted: (60*8 + 80*12) / 20 = 1440/20 = 72
         assert!((chains[0].transcendence - 72.0).abs() < 0.01);
     }
@@ -251,16 +252,19 @@ mod tests {
         let chains = detect_chains(&tracks, 2);
         assert_eq!(chains.len(), 1);
         assert_eq!(chains[0].chain_length, 3);
-        assert_eq!(chains[0].chain_title(), "Dark Star -> St. Stephen -> The Eleven");
+        assert_eq!(
+            chains[0].chain_title(),
+            "Dark Star -> St. Stephen -> The Eleven"
+        );
     }
 
     #[test]
     fn test_multiple_chains_per_show() {
         let tracks = vec![
-            make_track("Bertha", 6.0, 40.0),            // standalone
+            make_track("Bertha", 6.0, 40.0), // standalone
             make_track("Scarlet Begonias ->", 8.0, 60.0),
             make_track("Fire on the Mountain", 12.0, 80.0),
-            make_track("Estimated Prophet", 9.0, 55.0),  // standalone
+            make_track("Estimated Prophet", 9.0, 55.0), // standalone
             make_track("Dark Star ->", 20.0, 90.0),
             make_track("Drums ->", 15.0, 30.0),
             make_track("Space ->", 12.0, 85.0),
@@ -302,24 +306,41 @@ mod tests {
             ChainScore {
                 date: "1977-05-08".into(),
                 songs: vec!["Scarlet Begonias".into(), "Fire on the Mountain".into()],
-                chain_length: 2, duration_min: 20.0,
-                energy: 50.0, intensity: 50.0, groove: 50.0, improvisation: 50.0,
-                tightness: 50.0, build_quality: 50.0, exploratory: 50.0,
-                transcendence: 70.0, valence: 50.0, arousal: 50.0,
+                chain_length: 2,
+                duration_min: 20.0,
+                energy: 50.0,
+                intensity: 50.0,
+                groove: 50.0,
+                improvisation: 50.0,
+                tightness: 50.0,
+                build_quality: 50.0,
+                exploratory: 50.0,
+                transcendence: 70.0,
+                valence: 50.0,
+                arousal: 50.0,
                 tracks: vec![],
             },
             ChainScore {
                 date: "1977-05-08".into(),
                 songs: vec!["Dark Star".into(), "The Eleven".into()],
-                chain_length: 2, duration_min: 35.0,
-                energy: 50.0, intensity: 50.0, groove: 50.0, improvisation: 50.0,
-                tightness: 50.0, build_quality: 50.0, exploratory: 50.0,
-                transcendence: 90.0, valence: 50.0, arousal: 50.0,
+                chain_length: 2,
+                duration_min: 35.0,
+                energy: 50.0,
+                intensity: 50.0,
+                groove: 50.0,
+                improvisation: 50.0,
+                tightness: 50.0,
+                build_quality: 50.0,
+                exploratory: 50.0,
+                transcendence: 90.0,
+                valence: 50.0,
+                arousal: 50.0,
                 tracks: vec![],
             },
         ];
 
-        let filtered = filter_and_sort_chains(chains, None, Some("dark star"), "transcendence_score", 10);
+        let filtered =
+            filter_and_sort_chains(chains, None, Some("dark star"), "transcendence_score", 10);
         assert_eq!(filtered.len(), 1);
         assert_eq!(filtered[0].songs[0], "Dark Star");
     }
@@ -327,18 +348,12 @@ mod tests {
     #[test]
     fn test_duration_weighted_averaging() {
         // 10 min track at 100, 10 min track at 0 — should average to 50
-        let tracks = vec![
-            make_track("A ->", 10.0, 100.0),
-            make_track("B", 10.0, 0.0),
-        ];
+        let tracks = vec![make_track("A ->", 10.0, 100.0), make_track("B", 10.0, 0.0)];
         let chains = detect_chains(&tracks, 2);
         assert!((chains[0].transcendence - 50.0).abs() < 0.01);
 
         // Unequal weights: 30 min at 100, 10 min at 0 — should be 75
-        let tracks2 = vec![
-            make_track("A ->", 30.0, 100.0),
-            make_track("B", 10.0, 0.0),
-        ];
+        let tracks2 = vec![make_track("A ->", 30.0, 100.0), make_track("B", 10.0, 0.0)];
         let chains2 = detect_chains(&tracks2, 2);
         assert!((chains2[0].transcendence - 75.0).abs() < 0.01);
     }
@@ -358,7 +373,7 @@ mod tests {
 
         // With setlist data indicating Scarlet segued into Fire
         let setlist = vec![
-            ("Scarlet Begonias".into(), true, 2, 1),   // segued = true
+            ("Scarlet Begonias".into(), true, 2, 1),      // segued = true
             ("Fire on the Mountain".into(), false, 2, 2), // segued = false
             ("Estimated Prophet".into(), false, 2, 3),
         ];
@@ -366,7 +381,10 @@ mod tests {
         let chains = detect_chains_with_setlist(&tracks, &setlist, 2);
         assert_eq!(chains.len(), 1);
         assert_eq!(chains[0].chain_length, 2);
-        assert_eq!(chains[0].songs, vec!["Scarlet Begonias", "Fire on the Mountain"]);
+        assert_eq!(
+            chains[0].songs,
+            vec!["Scarlet Begonias", "Fire on the Mountain"]
+        );
     }
 
     #[test]
@@ -394,7 +412,10 @@ mod tests {
 
         let chains = detect_chains_with_setlist(&tracks, &setlist, 2);
         assert_eq!(chains.len(), 2);
-        assert_eq!(chains[0].songs, vec!["Scarlet Begonias", "Fire On The Mountain"]);
+        assert_eq!(
+            chains[0].songs,
+            vec!["Scarlet Begonias", "Fire On The Mountain"]
+        );
         assert_eq!(chains[1].chain_length, 4); // St. Stephen > NFA > St. Stephen > Morning Dew
         assert_eq!(chains[1].songs[0], "Saint Stephen");
         assert_eq!(chains[1].songs[3], "Morning Dew");

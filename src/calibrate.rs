@@ -6,8 +6,8 @@
 use anyhow::Result;
 use std::collections::HashMap;
 
-use crate::db::models::{CalibrationRow, NewAnalysis};
 use crate::db::Database;
+use crate::db::models::{CalibrationRow, NewAnalysis};
 
 const SCORE_NAMES: [&str; 10] = [
     "energy",
@@ -83,7 +83,7 @@ pub fn calibrate_scores(db: &Database, dry_run: bool) -> Result<CalibrateResult>
 
     // Compute β for each score
     let mut betas = Vec::with_capacity(10);
-    for score_idx in 0..10 {
+    for (score_idx, score_name) in SCORE_NAMES.iter().enumerate() {
         // Collect (show_median_lufs, score) pairs where both exist
         let mut x_vals = Vec::new();
         let mut y_vals = Vec::new();
@@ -108,12 +108,9 @@ pub fn calibrate_scores(db: &Database, dry_run: bool) -> Result<CalibrateResult>
             "negligible — no correction"
         };
 
-        println!(
-            "  {:<15} β = {:+.4}  ({})",
-            SCORE_NAMES[score_idx], beta, direction
-        );
+        println!("  {:<15} β = {:+.4}  ({})", score_name, beta, direction);
 
-        betas.push((SCORE_NAMES[score_idx].to_string(), beta));
+        betas.push((score_name.to_string(), beta));
     }
     println!();
 
@@ -221,9 +218,5 @@ fn ols_slope(x: &[f64], y: &[f64]) -> f64 {
         var += dx * dx;
     }
 
-    if var < 1e-12 {
-        0.0
-    } else {
-        cov / var
-    }
+    if var < 1e-12 { 0.0 } else { cov / var }
 }

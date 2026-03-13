@@ -32,7 +32,10 @@ pub fn compute_similarity(
     // Z-score normalize each dimension across all tracks
     let vectors = normalize_features(&raw, dim);
 
-    println!("Computing similarity for {} tracks ({}-dim vectors)...", n, dim);
+    println!(
+        "Computing similarity for {} tracks ({}-dim vectors)...",
+        n, dim
+    );
 
     let pb = ProgressBar::new(n as u64);
     pb.set_style(
@@ -69,9 +72,8 @@ pub fn compute_similarity(
                     a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal)
                 });
                 distances.truncate(TOP_K);
-                distances.sort_by(|a, b| {
-                    a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal)
-                });
+                distances
+                    .sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
 
                 pb.inc(1);
                 distances
@@ -152,11 +154,7 @@ fn cosine_similarity(a: &[f64], b: &[f64]) -> f64 {
     }
 
     let denom = norm_a.sqrt() * norm_b.sqrt();
-    if denom < 1e-10 {
-        0.0
-    } else {
-        dot / denom
-    }
+    if denom < 1e-10 { 0.0 } else { dot / denom }
 }
 
 #[cfg(test)]

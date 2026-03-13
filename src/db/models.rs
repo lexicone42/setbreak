@@ -122,38 +122,38 @@ pub struct NewAnalysis {
     pub true_peak_dbfs: Option<f64>,
     pub crest_factor: Option<f64>,
     pub energy_level: Option<f64>,
-    pub loudness_std: Option<f64>,            // std of short-term loudness (3s window)
-    pub peak_loudness: Option<f64>,           // max momentary loudness
-    pub spectral_flux_skewness: Option<f64>,  // skewness of flux: +ve = percussive hits, -ve = sustained
+    pub loudness_std: Option<f64>, // std of short-term loudness (3s window)
+    pub peak_loudness: Option<f64>, // max momentary loudness
+    pub spectral_flux_skewness: Option<f64>, // skewness of flux: +ve = percussive hits, -ve = sustained
     pub spectral_centroid_slope: Option<f64>, // brightness trend over time (build = positive)
-    pub energy_buildup_ratio: Option<f64>,    // energy last_third / first_third
-    pub bass_treble_ratio_mean: Option<f64>,  // mean bass/(high+presence) per frame
-    pub bass_treble_ratio_std: Option<f64>,   // std of bass/treble ratio
-    pub onset_density_std: Option<f64>,       // variability of onset density across 10s windows
-    pub loudness_buildup_slope: Option<f64>,  // linear trend of short-term loudness
-    pub peak_energy_time: Option<f64>,        // normalized time (0-1) of peak energy
+    pub energy_buildup_ratio: Option<f64>,   // energy last_third / first_third
+    pub bass_treble_ratio_mean: Option<f64>, // mean bass/(high+presence) per frame
+    pub bass_treble_ratio_std: Option<f64>,  // std of bass/treble ratio
+    pub onset_density_std: Option<f64>,      // variability of onset density across 10s windows
+    pub loudness_buildup_slope: Option<f64>, // linear trend of short-term loudness
+    pub peak_energy_time: Option<f64>,       // normalized time (0-1) of peak energy
 
     // Pitch-derived per-frame features
-    pub pitch_contour_std: Option<f64>,      // std of detected pitch frequencies (melodic range)
-    pub pitch_clarity_mean: Option<f64>,     // mean pitch clarity across frames
-    pub pitched_frame_ratio: Option<f64>,    // fraction of frames with detected pitch
+    pub pitch_contour_std: Option<f64>, // std of detected pitch frequencies (melodic range)
+    pub pitch_clarity_mean: Option<f64>, // mean pitch clarity across frames
+    pub pitched_frame_ratio: Option<f64>, // fraction of frames with detected pitch
 
     // Creative per-frame derivations
-    pub mfcc_flux_mean: Option<f64>,         // mean frame-to-frame MFCC distance (timbral change rate)
+    pub mfcc_flux_mean: Option<f64>, // mean frame-to-frame MFCC distance (timbral change rate)
     pub onset_interval_entropy: Option<f64>, // Shannon entropy of inter-onset intervals (rhythmic predictability)
     pub spectral_centroid_kurtosis: Option<f64>, // excess kurtosis of centroid distribution
     pub bass_energy_slope: Option<f64>,      // linear trend of bass energy over time
     pub spectral_bandwidth_slope: Option<f64>, // linear trend of bandwidth (broadening/narrowing)
-    pub loudness_dynamic_spread: Option<f64>,  // range of short-term loudness (max - min LUFS)
+    pub loudness_dynamic_spread: Option<f64>, // range of short-term loudness (max - min LUFS)
 
     // Beat timing features
-    pub beat_regularity: Option<f64>,           // CV of inter-beat intervals (0 = metronome, high = irregular)
+    pub beat_regularity: Option<f64>, // CV of inter-beat intervals (0 = metronome, high = irregular)
 
     // Tension/energy profile features
-    pub peak_tension: Option<f64>,              // max tension value (0-1 scale)
-    pub tension_range: Option<f64>,             // max - min tension (dynamic tension range)
-    pub energy_peak_count: Option<i32>,         // number of energy climax peaks
-    pub energy_valley_depth_mean: Option<f64>,  // mean valley depth relative to mean peak energy
+    pub peak_tension: Option<f64>,      // max tension value (0-1 scale)
+    pub tension_range: Option<f64>,     // max - min tension (dynamic tension range)
+    pub energy_peak_count: Option<i32>, // number of energy climax peaks
+    pub energy_valley_depth_mean: Option<f64>, // mean valley depth relative to mean peak energy
 
     // Periodicity features
     pub rhythmic_periodicity_strength: Option<f64>, // strength of strongest periodic event (0-1)
@@ -162,60 +162,60 @@ pub struct NewAnalysis {
     pub spectral_loudness_correlation: Option<f64>, // Pearson r between centroid and loudness
 
     // Spectral shape descriptors (from ferrous-waves STFT)
-    pub spectral_skewness_mean: Option<f64>,    // asymmetry of spectrum (+ve = low-freq dominant)
-    pub spectral_kurtosis_mean: Option<f64>,    // peakedness (high = tonal, low = noise-like)
-    pub spectral_entropy_mean: Option<f64>,     // normalized Shannon entropy (0 = pure tone, 1 = noise)
-    pub spectral_entropy_std: Option<f64>,      // variability of entropy over time
-    pub spectral_slope_mean: Option<f64>,       // spectral tilt (negative = natural roll-off)
+    pub spectral_skewness_mean: Option<f64>, // asymmetry of spectrum (+ve = low-freq dominant)
+    pub spectral_kurtosis_mean: Option<f64>, // peakedness (high = tonal, low = noise-like)
+    pub spectral_entropy_mean: Option<f64>, // normalized Shannon entropy (0 = pure tone, 1 = noise)
+    pub spectral_entropy_std: Option<f64>,  // variability of entropy over time
+    pub spectral_slope_mean: Option<f64>,   // spectral tilt (negative = natural roll-off)
     pub spectral_contrast_json: Option<String>, // JSON [f32; 7] — per-band peak/valley ratio
 
     // Sub-band spectral flux
-    pub sub_band_flux_bass_mean: Option<f64>,   // bass change rate (kick detection)
-    pub sub_band_flux_bass_std: Option<f64>,    // variability of bass changes
-    pub sub_band_flux_mid_mean: Option<f64>,    // mid change rate (harmonic/rhythmic)
-    pub sub_band_flux_high_mean: Option<f64>,   // treble change rate (hi-hat/cymbal)
+    pub sub_band_flux_bass_mean: Option<f64>, // bass change rate (kick detection)
+    pub sub_band_flux_bass_std: Option<f64>,  // variability of bass changes
+    pub sub_band_flux_mid_mean: Option<f64>,  // mid change rate (harmonic/rhythmic)
+    pub sub_band_flux_high_mean: Option<f64>, // treble change rate (hi-hat/cymbal)
 
     // Chromagram and harmonic features
-    pub tonnetz_json: Option<String>,           // JSON [f32; 6] — mean Tonnetz (harmonic center)
-    pub tonnetz_flux_mean: Option<f64>,         // rate of harmonic change (HCDF)
-    pub chroma_flux_mean: Option<f64>,          // rate of pitch-class change
+    pub tonnetz_json: Option<String>, // JSON [f32; 6] — mean Tonnetz (harmonic center)
+    pub tonnetz_flux_mean: Option<f64>, // rate of harmonic change (HCDF)
+    pub chroma_flux_mean: Option<f64>, // rate of pitch-class change
 
     // Beat-synchronous rhythm features
-    pub beat_pattern_json: Option<String>,      // JSON [[f32; 16]; 3] — sub-band onset patterns
-    pub syncopation: Option<f64>,               // off-beat emphasis (0 = on-beat, high = syncopated)
-    pub pulse_clarity: Option<f64>,             // beat regularity strength (0-1)
-    pub offbeat_ratio: Option<f64>,             // mid-band offbeat/downbeat energy (high = reggae skank)
+    pub beat_pattern_json: Option<String>, // JSON [[f32; 16]; 3] — sub-band onset patterns
+    pub syncopation: Option<f64>,          // off-beat emphasis (0 = on-beat, high = syncopated)
+    pub pulse_clarity: Option<f64>,        // beat regularity strength (0-1)
+    pub offbeat_ratio: Option<f64>,        // mid-band offbeat/downbeat energy (high = reggae skank)
 
     // Timbral texture descriptors
-    pub spectral_spread_mean: Option<f64>,       // spectral bandwidth in Hz (narrow = tonal, wide = noisy)
-    pub spectral_spread_std: Option<f64>,        // variability of spectral width
-    pub spectral_crest_mean: Option<f64>,        // max/mean of spectrum (high = tonal, low = noise)
-    pub spectral_crest_std: Option<f64>,         // variability of spectral peakedness
-    pub roughness_mean: Option<f64>,             // sensory dissonance (Sethares model)
-    pub roughness_std: Option<f64>,              // variability of roughness
+    pub spectral_spread_mean: Option<f64>, // spectral bandwidth in Hz (narrow = tonal, wide = noisy)
+    pub spectral_spread_std: Option<f64>,  // variability of spectral width
+    pub spectral_crest_mean: Option<f64>,  // max/mean of spectrum (high = tonal, low = noise)
+    pub spectral_crest_std: Option<f64>,   // variability of spectral peakedness
+    pub roughness_mean: Option<f64>,       // sensory dissonance (Sethares model)
+    pub roughness_std: Option<f64>,        // variability of roughness
 
     // MFCC dynamics (timbre change rate)
-    pub mfcc_delta_mean_json: Option<String>,       // JSON [f32; 13] — mean MFCC first derivatives
+    pub mfcc_delta_mean_json: Option<String>, // JSON [f32; 13] — mean MFCC first derivatives
     pub mfcc_delta_delta_mean_json: Option<String>, // JSON [f32; 13] — mean MFCC second derivatives
 
     // Stereo characteristics
-    pub stereo_width_mean: Option<f64>,          // L/R correlation (1=mono, 0=wide, <0=out of phase)
-    pub stereo_width_std: Option<f64>,           // variability of stereo image
+    pub stereo_width_mean: Option<f64>, // L/R correlation (1=mono, 0=wide, <0=out of phase)
+    pub stereo_width_std: Option<f64>,  // variability of stereo image
 
     // Onset envelope characteristics
-    pub attack_time_mean: Option<f64>,           // mean rise time onset→peak (seconds)
-    pub attack_time_std: Option<f64>,            // variability of attack times
-    pub decay_time_mean: Option<f64>,            // mean decay time peak→quiet (seconds)
-    pub decay_time_std: Option<f64>,             // variability of decay times
-    pub onset_strength_mean: Option<f64>,        // mean onset strength (spectral flux peaks)
-    pub onset_strength_std: Option<f64>,         // variability of onset strengths
-    pub onset_strength_skewness: Option<f64>,    // distribution shape (+ve = rare big hits)
+    pub attack_time_mean: Option<f64>, // mean rise time onset→peak (seconds)
+    pub attack_time_std: Option<f64>,  // variability of attack times
+    pub decay_time_mean: Option<f64>,  // mean decay time peak→quiet (seconds)
+    pub decay_time_std: Option<f64>,   // variability of decay times
+    pub onset_strength_mean: Option<f64>, // mean onset strength (spectral flux peaks)
+    pub onset_strength_std: Option<f64>, // variability of onset strengths
+    pub onset_strength_skewness: Option<f64>, // distribution shape (+ve = rare big hits)
 
     // Rhythm micro-features
-    pub swing_ratio: Option<f64>,                // 8th-note timing ratio (1.0=straight, ~1.67=shuffle)
+    pub swing_ratio: Option<f64>, // 8th-note timing ratio (1.0=straight, ~1.67=shuffle)
     pub microtiming_deviation_mean: Option<f64>, // mean onset-to-grid deviation (seconds)
-    pub microtiming_deviation_std: Option<f64>,  // variability of timing deviations
-    pub microtiming_bias: Option<f64>,           // ahead(+)/behind(-) beat tendency
+    pub microtiming_deviation_std: Option<f64>, // variability of timing deviations
+    pub microtiming_bias: Option<f64>, // ahead(+)/behind(-) beat tendency
 
     // Temporal modulation spectrum
     pub temporal_modulation_json: Option<String>, // JSON [f32; 5] — energy in 5 modulation bands
@@ -224,12 +224,12 @@ pub struct NewAnalysis {
     pub chroma_self_similarity_bandwidth: Option<f64>, // harmonic repetitiveness (wide=repetitive)
 
     // v14: Music understanding features
-    pub harmonic_percussive_ratio: Option<f64>,     // 1.0=harmonic, 0.0=percussive
-    pub chromagram_entropy: Option<f64>,             // tonal complexity (0=simple, 2.5=chromatic)
-    pub spectral_contrast_slope: Option<f64>,        // contrast vs frequency trend
-    pub spectral_contrast_range: Option<f64>,        // contrast variation across bands
+    pub harmonic_percussive_ratio: Option<f64>, // 1.0=harmonic, 0.0=percussive
+    pub chromagram_entropy: Option<f64>,        // tonal complexity (0=simple, 2.5=chromatic)
+    pub spectral_contrast_slope: Option<f64>,   // contrast vs frequency trend
+    pub spectral_contrast_range: Option<f64>,   // contrast variation across bands
     pub onset_strength_contour_json: Option<String>, // DCT of rhythmic intensity shape [4 values]
-    pub section_diversity_score: Option<f64>,        // how different sections are from each other
+    pub section_diversity_score: Option<f64>,   // how different sections are from each other
 
     // Musical
     pub estimated_key: Option<String>,
@@ -242,15 +242,15 @@ pub struct NewAnalysis {
     pub key_alternatives_count: Option<i32>,
     pub time_sig_numerator: Option<i32>,
     pub time_sig_denominator: Option<i32>,
-    pub chroma_vector: Option<String>, // JSON [f64; 12]
-    pub major_frame_ratio: Option<f64>,  // fraction of frames classified as major (0-1)
-    pub major_chord_ratio: Option<f64>,  // fraction of detected chords that are major (0-1)
+    pub chroma_vector: Option<String>,  // JSON [f64; 12]
+    pub major_frame_ratio: Option<f64>, // fraction of frames classified as major (0-1)
+    pub major_chord_ratio: Option<f64>, // fraction of detected chords that are major (0-1)
 
     // v16: Dynamics trajectory + key change count
-    pub dynamics_entropy: Option<f64>,     // Shannon entropy of LUFS histogram (0-1)
-    pub dynamics_slope: Option<f64>,       // LUFS/minute linear trend (positive = crescendo)
-    pub dynamics_peak_count: Option<i32>,  // loudness peaks with ≥3 LU prominence
-    pub key_change_count: Option<i32>,     // key changes across 30s windows
+    pub dynamics_entropy: Option<f64>, // Shannon entropy of LUFS histogram (0-1)
+    pub dynamics_slope: Option<f64>,   // LUFS/minute linear trend (positive = crescendo)
+    pub dynamics_peak_count: Option<i32>, // loudness peaks with ≥3 LU prominence
+    pub key_change_count: Option<i32>, // key changes across 30s windows
 
     // Quality
     pub recording_quality_score: Option<f64>,
