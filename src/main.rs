@@ -391,6 +391,56 @@ enum Commands {
         /// Show only jam score columns
         #[arg(long)]
         scores: bool,
+
+        /// Output as JSON (for tooling integration)
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Test score formulas interactively without recompiling
+    ScoreLab {
+        /// Expression to evaluate (uses feature column names as variables).
+        /// Example: "rms_level / 0.18 * 30 + (lufs_integrated + 55) / 22 * 30"
+        #[arg(required_unless_present = "list")]
+        formula: Option<String>,
+
+        /// List all available variable names
+        #[arg(long)]
+        list: bool,
+
+        /// Number of top results to show
+        #[arg(short = 'n', long, default_value = "20")]
+        limit: usize,
+
+        /// Minimum duration in minutes
+        #[arg(long)]
+        min_duration: Option<f64>,
+
+        /// Only evaluate live recordings (default: all types)
+        #[arg(long)]
+        live_only: bool,
+
+        /// Show bottom results instead of top (ascending sort)
+        #[arg(long)]
+        bottom: bool,
+    },
+
+    /// Find tracks with similar harmonic content (chroma-based, transposition-aware)
+    HarmonicMatch {
+        /// Song title to search for (substring match)
+        song: String,
+
+        /// Show date to narrow the search (YYYY-MM-DD)
+        #[arg(short, long)]
+        date: Option<String>,
+
+        /// Number of results
+        #[arg(short = 'n', long, default_value = "20")]
+        limit: usize,
+
+        /// Require same key (disable transposition matching)
+        #[arg(long)]
+        same_key: bool,
     },
 }
 
@@ -1464,6 +1514,7 @@ fn main() -> Result<()> {
             grep,
             category,
             scores,
+            json,
         } => {
             use setbreak::db::columns::ANALYSIS_SCHEMA;
 
@@ -1487,7 +1538,24 @@ fn main() -> Result<()> {
                 })
                 .collect();
 
-            if columns.is_empty() {
+            if json {
+                // JSON output for tooling integration
+                let json_cols: Vec<serde_json::Value> = columns
+                    .iter()
+                    .map(|c| {
+                        serde_json::json!({
+                            "name": c.name,
+                            "type": c.sql_type,
+                            "category": c.category,
+                            "description": c.description,
+                        })
+                    })
+                    .collect();
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&json_cols).unwrap_or_else(|_| "[]".to_string())
+                );
+            } else if columns.is_empty() {
                 println!("No matching columns found.");
             } else {
                 let mut current_category = "";
@@ -1597,6 +1665,155 @@ fn main() -> Result<()> {
                 println!("Bands:");
                 for (band, count) in &stats.bands {
                     println!("  {:<30} {}", band, count);
+                }
+            }
+        }
+
+        Commands::ScoreLab {
+            formula,
+            list,
+            limit,
+            min_duration,
+            live_only,
+            bottom,
+        } => {
+            if list {
+                let vars = setbreak::score_lab::list_variables();
+                let mut current_category = "";
+                for (name, cat, desc) in &vars {
+                    if *cat != current_category {
+                        if !current_category.is_empty() {
+                            println!();
+                        }
+                        println!("  {cat}");
+                        println!("  {}", "-".repeat(cat.len()));
+                        current_category = cat;
+                    }
+                    println!("  {:<40}  {}", name, desc);
+                }
+                println!();
+                println!("{} variables available", vars.len());
+                println!();
+                println!(
+                    "Usage: setbreak score-lab \"rms_level / 0.18 * 30 + (lufs_integrated + 55) / 22 * 30\""
+                );
+                println!("Operators: + - * / ^ %  |  Functions: min, max, floor, ceil, sqrt, abs");
+                println!("Comparisons: < > <= >= == != && ||  |  Ternary: if(cond, then, else)");
+            } else if let Some(expr) = formula {
+                let min_dur_secs = min_duration.map(|m| m * 60.0);
+                match setbreak::score_lab::evaluate_formula(
+                    &db,
+                    &expr,
+                    limit,
+                    min_dur_secs,
+                    live_only,
+                ) {
+                    Ok(mut results) => {
+                        if bottom {
+                            results.reverse();
+                        }
+                        if results.is_empty() {
+                            println!("No results (expression returned no finite values).");
+                        } else {
+                            let label = if bottom { "Bottom" } else { "Top" };
+                            println!("{label} {} by: {}", results.len(), expr);
+                            println!();
+                            println!(
+                                "{:>4}  {:<40} {:>10} {:>6.1}  {:>10}",
+                                "#", "Title", "Date", "Min", "Score"
+                            );
+                            println!("{}", "-".repeat(80));
+                            for (i, r) in results.iter().enumerate() {
+                                let title_display = if r.title.len() > 38 {
+                                    format!("{}...", &r.title[..35])
+                                } else {
+                                    r.title.clone()
+                                };
+                                println!(
+                                    "{:>4}  {:<40} {:>10} {:>6.1}  {:>10.2}",
+                                    i + 1,
+                                    title_display,
+                                    r.date,
+                                    r.duration_min,
+                                    r.computed_score
+                                );
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("Error: {e}");
+                        std::process::exit(1);
+                    }
+                }
+            }
+        }
+
+        Commands::HarmonicMatch {
+            song,
+            date,
+            limit,
+            same_key,
+        } => {
+            let track_id = match db.find_track_id(&song, date.as_deref())? {
+                Some((id, title, date)) => {
+                    println!("Harmonic matches for: {} ({})", title, date);
+                    id
+                }
+                None => {
+                    println!("No analyzed track matching \"{}\".", song);
+                    return Ok(());
+                }
+            };
+
+            match setbreak::chroma::find_harmonic_matches(&db, track_id, limit, !same_key) {
+                Ok((target, matches)) => {
+                    if matches.is_empty() {
+                        println!("No tracks with chroma data found.");
+                        return Ok(());
+                    }
+
+                    let mode = if same_key {
+                        "same key only"
+                    } else {
+                        "transposition-aware"
+                    };
+                    println!("Mode: {mode}  |  Target key: {}", target.key);
+                    println!();
+                    println!(
+                        "{:>4}  {:<35} {:>10} {:>8} {:>5} {:>6}",
+                        "#", "Title", "Date", "Key", "Dist", "Shift"
+                    );
+                    println!("{}", "-".repeat(80));
+
+                    for (i, m) in matches.iter().enumerate() {
+                        let title_display = if m.title.len() > 33 {
+                            format!("{}...", &m.title[..30])
+                        } else {
+                            m.title.clone()
+                        };
+                        let shift_display = if m.transposition == 0 {
+                            "=".to_string()
+                        } else {
+                            format!("+{}", m.transposition)
+                        };
+                        println!(
+                            "{:>4}  {:<35} {:>10} {:>8} {:>5.3} {:>6}",
+                            i + 1,
+                            title_display,
+                            m.date,
+                            m.key,
+                            m.distance,
+                            shift_display
+                        );
+                    }
+                    println!();
+                    println!(
+                        "Dist=cosine distance (0=identical harmony), Shift=semitones transposed"
+                    );
+                }
+                Err(e) => {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
                 }
             }
         }
