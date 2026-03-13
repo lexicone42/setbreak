@@ -21,11 +21,13 @@ podcast quality scorer, or anything else that benefits from rich audio feature e
 7. [Example: Reggae/Dub Riddim Finder](#example-reggae-dub-riddim-finder)
 8. [Example: DJ Transition Planner](#example-dj-transition-planner)
 9. [Designing Your Own Scores](#designing-your-own-scores)
-10. [Feature Reference by Use Case](#feature-reference-by-use-case)
-11. [Working with the Similarity System](#working-with-the-similarity-system)
-12. [Performance and Memory Notes](#performance-and-memory-notes)
-13. [Database Schema and Queries](#database-schema-and-queries)
-14. [Dependencies and Build](#dependencies-and-build)
+10. [Score Lab: Interactive Formula Testing](#score-lab-interactive-formula-testing)
+11. [Feature Reference by Use Case](#feature-reference-by-use-case)
+12. [Working with the Similarity System](#working-with-the-similarity-system)
+13. [Chroma Vectors and Harmonic Similarity](#chroma-vectors-and-harmonic-similarity)
+14. [Performance and Memory Notes](#performance-and-memory-notes)
+15. [Database Schema and Queries](#database-schema-and-queries)
+16. [Dependencies and Build](#dependencies-and-build)
 
 ---
 
@@ -90,6 +92,8 @@ src/
 │   └── queries.rs             # All SQL queries                     ← ADAPT
 │
 ├── similarity.rs              # Cosine similarity + k-NN            ← KEEP
+├── chroma.rs                  # Transposition-aware harmonic match  ← KEEP
+├── score_lab.rs               # Interactive formula testing         ← KEEP (your main iteration tool)
 ├── chains.rs                  # Segue chain detection               ← REMOVE (jam-specific)
 ├── segues.rs                  # Audio boundary segue detection      ← REMOVE or REPURPOSE
 ├── discovery.rs               # archive.org integration             ← REMOVE or REPLACE
@@ -136,6 +140,19 @@ machine at 2 workers.
 Post-processing regression that removes recording-quality bias from scores. If your
 corpus has variable recording quality (live recordings, different microphones, different
 mastering), this corrects for it automatically.
+
+### Score Lab (zero work)
+Interactive formula testing against stored features, powered by evalexpr. Test score
+formulas in seconds without recompiling. See [Score Lab](#score-lab-interactive-formula-testing).
+
+### Chroma-Based Harmonic Matching (zero work)
+Transposition-aware harmonic similarity using stored 12-dimensional chroma vectors.
+Find tracks with similar chord progressions even in different keys. See
+[Chroma Vectors](#chroma-vectors-and-harmonic-similarity).
+
+### Schema Introspection (zero work)
+`schema --json` exports the complete feature inventory as machine-readable JSON.
+Useful for building tooling, generating documentation, or feeding into other systems.
 
 ### CLI Framework (minimal adaptation)
 Clap v4 with derive macros, progress bars (indicatif), structured logging (env_logger).
@@ -441,6 +458,8 @@ SELECT time, transition_type, strength, duration FROM track_transitions WHERE tr
 | `analyzer/features.rs` | All 193 features extracted here — genre-agnostic |
 | `analyzer/boundary.rs` | Track head/tail features (useful beyond segues) |
 | `similarity.rs` | Z-score normalization + cosine similarity + k-NN |
+| `score_lab.rs` | Interactive formula testing (evalexpr, your main iteration tool) |
+| `chroma.rs` | Transposition-aware harmonic matching (chroma vectors) |
 | `calibrate.rs` | LUFS bias regression (useful for any mixed-quality corpus) |
 | `scanner/mod.rs` | Directory walking + file detection |
 | `scanner/metadata.rs` | Tag reading via lofty crate |
@@ -586,7 +605,10 @@ want "top N by score X" and "find similar to track Y".
 # Run analysis (2 workers is safe; increase if you have RAM)
 ./target/release/your-tool analyze -j 2
 
-# Check scores
+# Experiment with score formulas interactively (no recompile needed!)
+./target/release/your-tool score-lab "pulse_clarity * 25 + (1 - beat_regularity) * 25" -n 20
+
+# Once formulas are stable in jam_metrics.rs, check compiled scores
 ./target/release/your-tool top your_score -n 20
 
 # Build similarity index
@@ -594,6 +616,12 @@ want "top N by score X" and "find similar to track Y".
 
 # Find similar tracks
 ./target/release/your-tool similar "Track Name"
+
+# Find harmonically similar tracks (transposition-aware)
+./target/release/your-tool harmonic-match "Track Name"
+
+# Export schema as JSON for tooling
+./target/release/your-tool schema --json > features.json
 ```
 
 ---
@@ -873,6 +901,71 @@ djplan energy-flow                       # Visualize energy curve of a set
 
 ---
 
+## Score Lab: Interactive Formula Testing
+
+The `score-lab` command is your primary tool for iterating on score formulas. It
+evaluates arbitrary mathematical expressions against all stored features **without
+recompiling** — collapsing the feedback loop from "edit code → build → rescore → check"
+to just "type formula → see results."
+
+### Basic Usage
+
+```bash
+# List all available variables (every numeric column in the database)
+setbreak score-lab --list
+
+# Test a formula — shows top 20 tracks sorted by the computed value
+setbreak score-lab "rms_level / 0.18 * 30 + (lufs_integrated + 55) / 22 * 30"
+
+# Show bottom results (useful for finding what scores LOW)
+setbreak score-lab "tempo_stability" --bottom -n 10
+
+# Filter to live recordings over 5 minutes
+setbreak score-lab "groove_score * energy_score / 100" --live-only --min-duration 5
+```
+
+### Expression Language
+
+Score-lab uses [evalexpr](https://docs.rs/evalexpr), which supports:
+
+| Category | Operators / Functions |
+|----------|---------------------|
+| Arithmetic | `+`, `-`, `*`, `/`, `^` (power), `%` (modulo) |
+| Comparison | `<`, `>`, `<=`, `>=`, `==`, `!=` |
+| Logic | `&&`, `\|\|`, `!` |
+| Conditional | `if(condition, then_value, else_value)` |
+| Math functions | `min(a, b)`, `max(a, b)`, `floor(x)`, `ceil(x)`, `sqrt(x)`, `abs(x)` |
+
+### The Iteration Workflow
+
+```
+1. Start with a hypothesis: "danceability = steady beat + moderate tempo + low roughness"
+2. Write the formula:
+   setbreak score-lab "pulse_clarity * 25 + if(tempo_bpm > 100, if(tempo_bpm < 130, 25, 0), 0) + (1 - roughness_mean / 5) * 25 + (1 - beat_regularity) * 25"
+3. Check the top results — do they match your intuition?
+4. Adjust weights, thresholds, and features
+5. Repeat until satisfied
+6. Move the final formula into jam_metrics.rs, rebuild, rescore
+```
+
+This is dramatically faster than the compile-rescore cycle. A formula that takes 10
+iterations to calibrate would cost ~15 minutes of compile time without score-lab.
+
+### Variable Names
+
+Every numeric column in `analysis_results` is available as a variable. Use
+`--list` to see them all. Key ones for score design:
+
+- `rms_level`, `lufs_integrated`, `dynamic_range` — loudness/energy
+- `spectral_centroid_mean`, `roughness_mean` — timbre
+- `tempo_bpm`, `tempo_stability`, `beat_regularity` — rhythm
+- `major_chord_ratio`, `harmonic_complexity`, `key_change_count` — harmony
+- `onset_count`, `duration` — derived (onset_rate = onset_count / duration)
+
+NULL values in the database are treated as 0.0.
+
+---
+
 ## Designing Your Own Scores
 
 ### The Pattern
@@ -918,11 +1011,17 @@ fn sweet_spot(val: f64, low: f64, high: f64) -> f64 {
 
 ### Calibration Strategy
 
-1. **Start with guesses** for normalization ranges (e.g., "RMS probably maxes at 0.18")
-2. **Analyze ~100 tracks** and run `setbreak sql "SELECT AVG(rms_level), MAX(rms_level), MIN(rms_level) FROM analysis_results"` to see actual distributions
-3. **Adjust normalization ranges** based on your corpus
-4. **Use `rescore`** to iterate without re-analyzing (instant, reads stored features)
-5. **Check with `top`** and `compare`** — do the top-scoring tracks match your intuition?
+1. **Start with `score-lab`** — test formulas interactively before writing Rust code:
+   ```bash
+   setbreak score-lab "pulse_clarity * 25 + (1 - beat_regularity) * 25 + ..." -n 20
+   ```
+2. **Check distributions** with SQL to find normalization ranges:
+   ```bash
+   setbreak sql "SELECT AVG(rms_level), MAX(rms_level), MIN(rms_level) FROM analysis_results"
+   ```
+3. **Once the formula is stable**, move it into `jam_metrics.rs` as a proper Rust function
+4. **Use `rescore`** to apply the compiled formula without re-analyzing
+5. **Check with `top`** and `compare` — do the top-scoring tracks match your intuition?
 6. **Use `calibrate`** if recording quality varies across your corpus
 
 ### Tips
@@ -1081,6 +1180,65 @@ pub fn get_rhythmic_feature_vectors(&self) -> Result<Vec<(i64, Vec<f64>)>> {
 
 ---
 
+## Chroma Vectors and Harmonic Similarity
+
+The `harmonic-match` command finds tracks with similar chord progressions using the
+stored 12-dimensional chroma vectors — even when tracks are in different keys.
+
+### How It Works
+
+Each track's `chroma_vector` is a 12-element array representing the energy in each
+pitch class (C, C#, D, ..., B). Two tracks playing the same chord progression in
+different keys will have the same chroma shape, just rotated.
+
+The `harmonic-match` command:
+1. Loads the target track's chroma vector
+2. For each other track, tries all 12 rotations (transpositions)
+3. Picks the rotation that minimizes cosine distance
+4. Returns the best matches sorted by distance
+
+```bash
+# Find tracks harmonically similar to a specific performance
+setbreak harmonic-match "Dark Star" -d 1972-08-27
+
+# Same key only (no transposition)
+setbreak harmonic-match "Scarlet Begonias" --same-key
+
+# More results
+setbreak harmonic-match "Eyes of the World" -n 30
+```
+
+### Using Chroma for Custom Analysis
+
+The chroma module (`src/chroma.rs`) provides reusable functions:
+
+- `rotate_chroma(chroma, semitones)` — circular shift for transposition
+- `best_transposition(a, b)` — find the optimal alignment between two chroma vectors
+- `chroma_cosine_distance(a, b)` — distance metric for harmonic similarity
+
+These are useful for building features like:
+- **Riddim clustering** — group tracks by chord progression regardless of key
+- **Key-aware playlists** — ensure adjacent tracks are in compatible keys
+- **Harmonic complexity scoring** — measure how "far" a track's chroma is from a
+  simple major/minor template
+
+### The Schema Command
+
+Use `schema --json` to get machine-readable column metadata for building tooling:
+
+```bash
+# Full schema as JSON
+setbreak schema --json > features.json
+
+# Just rhythm features
+setbreak schema --category rhythm --json
+
+# Search for bass-related features
+setbreak schema --grep bass --json
+```
+
+---
+
 ## Performance and Memory Notes
 
 ### Analysis Speed
@@ -1233,6 +1391,7 @@ This is idempotent — running the same migration twice is safe because
 | `log` + `env_logger` | Logging | Keep |
 | `tokio` | Async runtime (ferrous-waves is async) | **Required** |
 | `libc` | malloc_trim (Linux memory management) | Keep on Linux |
+| `evalexpr` | Expression evaluation (score-lab) | Keep (enables formula iteration) |
 
 ### Minimum Viable Fork
 
