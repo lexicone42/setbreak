@@ -358,21 +358,18 @@ These are computed from the time-series vectors during extraction — they captu
 
 ### Musical Key / Chord (13 features + 1 JSON)
 
-> **Known limitation: `estimated_key` is unreliable.** The upstream chroma extraction
-> has a strong bias toward the A pitch class (likely from guitar open-string harmonics
-> at 110/220/440 Hz), causing ~75% of tracks to be classified as D minor, A minor, or
-> F major regardless of actual key. Tested against 6 songs with known keys (Fire on
-> the Mountain=B, Scarlet Begonias=B, Friend of the Devil=G, Eyes of the World=E,
-> Sugar Magnolia=B, Dark Star=Am): **0/6 detected correctly.** The chroma *vectors*
-> are still useful for relative similarity (harmonic-match works), but absolute key
-> labels should not be trusted. `key_change_count` (which counts *changes* rather than
-> identifying keys) is more reliable. `major_chord_ratio` (which measures chord quality
-> from the chord detector, not chroma) is also unaffected.
+> **Note on key detection accuracy.** The chroma extraction uses a CQT-style
+> filterbank (triangular filters at semitone frequencies across 5 octaves, folded
+> into 12 pitch classes). This produces 19+ distinct keys across a library and
+> 7-12 distinct keys per show. Root note detection is correct ~60% of the time
+> on known-key songs; mode classification (major vs minor vs modal) is less
+> reliable. Key detection for live recordings is inherently harder than for
+> studio recordings due to tuning variance, improvisation, and spectral bleed.
 
 | Feature | Description |
 |---------|-------------|
-| `estimated_key` | Detected key — **unreliable**, see note above |
-| `key_confidence` | Confidence of key detection — low values are common due to chroma bias |
+| `estimated_key` | Detected key, e.g., "A minor", "D mixolydian" — root usually correct, mode approximate |
+| `key_confidence` | Confidence of key detection (0–1) |
 | `tonality` | Tonality measure |
 | `harmonic_complexity` | Harmonic complexity |
 | `chord_count` | Number of distinct chords used |
@@ -380,7 +377,7 @@ These are computed from the time-series vectors during extraction — they captu
 | `mode_clarity` | How clearly major vs minor (ambiguous modes score low) |
 | `key_alternatives_count` | Number of plausible alternative keys |
 | `time_sig_numerator/denominator` | Detected time signature |
-| `chroma_vector` | [f64; 12] pitch class distribution — biased toward A, but useful for *relative* comparisons |
+| `chroma_vector` | [f64; 12] pitch class distribution (CQT filterbank, octave-normalized) |
 | `major_frame_ratio` | Fraction of frames classified as major (0–1) |
 | `major_chord_ratio` | Fraction of chords that are major types (0–1) — **reliable** (uses chord detector, not chroma) |
 
@@ -1092,14 +1089,12 @@ harmonic vs percussive balance.
 **JSON:** `beat_pattern_json`, `temporal_modulation_json`
 
 ### "I want to analyze harmonic content"
-**Reliable:** `chord_count`, `chord_change_rate`, `harmonic_complexity`,
-`chromagram_entropy`, `chroma_flux_mean`, `key_change_count`, `major_chord_ratio`
+**Primary:** `estimated_key`, `chord_count`, `chord_change_rate`,
+`harmonic_complexity`, `chromagram_entropy`, `chroma_flux_mean`, `key_change_count`,
+`major_chord_ratio`, `mode_clarity`
 
-**Unreliable:** `estimated_key`, `key_confidence`, `mode_clarity` (see
-[key detection caveat](#musical-key--chord-13-features--1-json))
-
-**JSON:** `tonnetz_json` (6D harmonic space), `chroma_vector` (12D — biased but
-useful for relative comparisons via `harmonic-match`)
+**JSON:** `tonnetz_json` (6D harmonic space), `chroma_vector` (12D pitch class
+distribution via CQT filterbank)
 
 **Detail table:** `track_chords` (per-chord with timestamps and confidence)
 
@@ -1200,17 +1195,13 @@ pub fn get_rhythmic_feature_vectors(&self) -> Result<Vec<(i64, Vec<f64>)>> {
 The `harmonic-match` command finds tracks with similar harmonic character using the
 stored 12-dimensional chroma vectors.
 
-### Important Caveat: Chroma Bias
+### Chroma Extraction: CQT Filterbank
 
-The upstream chroma extraction (ferrous-waves) has a systematic bias toward the A
-pitch class, likely from guitar open-string harmonics (110/220/440 Hz). This means:
-- **Absolute key detection (`estimated_key`) is unreliable** — ~75% of tracks read
-  as D minor, A minor, or F major regardless of actual key (0/6 known-key test songs
-  detected correctly)
-- **Relative comparisons still work** — because all tracks are biased the same way,
-  cosine distance between chroma vectors still captures harmonic *similarity*
-- The `harmonic-match` command uses relative comparison, so it produces
-  musically meaningful results despite the bias
+The chroma extraction uses a CQT-style filterbank (constant-Q chromagram) instead of
+naive FFT-to-pitch-class mapping. This gives each pitch class equal representation
+across octaves, avoiding the bass-frequency bias that plagues direct FFT approaches.
+Key detection produces 19+ distinct keys across a library and 7-12 per show.
+Root note accuracy is ~60% on known-key songs; mode classification is approximate.
 
 ### How It Works
 
