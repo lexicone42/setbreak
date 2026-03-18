@@ -357,10 +357,22 @@ These are computed from the time-series vectors during extraction — they captu
 | `onset_strength_contour_json` | [f32; 4] DCT of the rhythmic shape |
 
 ### Musical Key / Chord (13 features + 1 JSON)
+
+> **Known limitation: `estimated_key` is unreliable.** The upstream chroma extraction
+> has a strong bias toward the A pitch class (likely from guitar open-string harmonics
+> at 110/220/440 Hz), causing ~75% of tracks to be classified as D minor, A minor, or
+> F major regardless of actual key. Tested against 6 songs with known keys (Fire on
+> the Mountain=B, Scarlet Begonias=B, Friend of the Devil=G, Eyes of the World=E,
+> Sugar Magnolia=B, Dark Star=Am): **0/6 detected correctly.** The chroma *vectors*
+> are still useful for relative similarity (harmonic-match works), but absolute key
+> labels should not be trusted. `key_change_count` (which counts *changes* rather than
+> identifying keys) is more reliable. `major_chord_ratio` (which measures chord quality
+> from the chord detector, not chroma) is also unaffected.
+
 | Feature | Description |
 |---------|-------------|
-| `estimated_key` | Detected key, e.g., "A minor", "D mixolydian" (modal detection works) |
-| `key_confidence` | Confidence of key detection |
+| `estimated_key` | Detected key — **unreliable**, see note above |
+| `key_confidence` | Confidence of key detection — low values are common due to chroma bias |
 | `tonality` | Tonality measure |
 | `harmonic_complexity` | Harmonic complexity |
 | `chord_count` | Number of distinct chords used |
@@ -368,9 +380,9 @@ These are computed from the time-series vectors during extraction — they captu
 | `mode_clarity` | How clearly major vs minor (ambiguous modes score low) |
 | `key_alternatives_count` | Number of plausible alternative keys |
 | `time_sig_numerator/denominator` | Detected time signature |
-| `chroma_vector` | [f64; 12] pitch class distribution (C, C#, D, ..., B) |
+| `chroma_vector` | [f64; 12] pitch class distribution — biased toward A, but useful for *relative* comparisons |
 | `major_frame_ratio` | Fraction of frames classified as major (0–1) |
-| `major_chord_ratio` | Fraction of chords that are major types (0–1) |
+| `major_chord_ratio` | Fraction of chords that are major types (0–1) — **reliable** (uses chord detector, not chroma) |
 
 ### Dynamics Trajectory (4 features)
 | Feature | Description |
@@ -1080,11 +1092,14 @@ harmonic vs percussive balance.
 **JSON:** `beat_pattern_json`, `temporal_modulation_json`
 
 ### "I want to analyze harmonic content"
-**Primary:** `estimated_key`, `key_confidence`, `chord_count`, `chord_change_rate`,
-`harmonic_complexity`, `chromagram_entropy`, `chroma_flux_mean`, `key_change_count`,
-`major_chord_ratio`, `mode_clarity`
+**Reliable:** `chord_count`, `chord_change_rate`, `harmonic_complexity`,
+`chromagram_entropy`, `chroma_flux_mean`, `key_change_count`, `major_chord_ratio`
 
-**JSON:** `tonnetz_json` (6D harmonic space), `chroma_vector` (12D pitch class distribution)
+**Unreliable:** `estimated_key`, `key_confidence`, `mode_clarity` (see
+[key detection caveat](#musical-key--chord-13-features--1-json))
+
+**JSON:** `tonnetz_json` (6D harmonic space), `chroma_vector` (12D — biased but
+useful for relative comparisons via `harmonic-match`)
 
 **Detail table:** `track_chords` (per-chord with timestamps and confidence)
 
@@ -1182,16 +1197,25 @@ pub fn get_rhythmic_feature_vectors(&self) -> Result<Vec<(i64, Vec<f64>)>> {
 
 ## Chroma Vectors and Harmonic Similarity
 
-The `harmonic-match` command finds tracks with similar chord progressions using the
-stored 12-dimensional chroma vectors — even when tracks are in different keys.
+The `harmonic-match` command finds tracks with similar harmonic character using the
+stored 12-dimensional chroma vectors.
+
+### Important Caveat: Chroma Bias
+
+The upstream chroma extraction (ferrous-waves) has a systematic bias toward the A
+pitch class, likely from guitar open-string harmonics (110/220/440 Hz). This means:
+- **Absolute key detection (`estimated_key`) is unreliable** — ~75% of tracks read
+  as D minor, A minor, or F major regardless of actual key (0/6 known-key test songs
+  detected correctly)
+- **Relative comparisons still work** — because all tracks are biased the same way,
+  cosine distance between chroma vectors still captures harmonic *similarity*
+- The `harmonic-match` command uses relative comparison, so it produces
+  musically meaningful results despite the bias
 
 ### How It Works
 
 Each track's `chroma_vector` is a 12-element array representing the energy in each
-pitch class (C, C#, D, ..., B). Two tracks playing the same chord progression in
-different keys will have the same chroma shape, just rotated.
-
-The `harmonic-match` command:
+pitch class (C, C#, D, ..., B). The `harmonic-match` command:
 1. Loads the target track's chroma vector
 2. For each other track, tries all 12 rotations (transpositions)
 3. Picks the rotation that minimizes cosine distance
