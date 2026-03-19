@@ -431,15 +431,15 @@ pub fn extract(track_id: i64, r: &AnalysisResult) -> ExtractionResult {
         beat_pattern_json,
         syncopation: Some(r.spectral.syncopation as f64),
         pulse_clarity: Some(r.spectral.pulse_clarity as f64),
-        offbeat_ratio: Some(r.spectral.offbeat_ratio as f64),
+        offbeat_ratio: Some((r.spectral.offbeat_ratio as f64).clamp(0.0, 5.0)),
 
         // v13: New spectral/temporal features
         spectral_spread_mean: Some(spread_mean),
         spectral_spread_std: Some(spread_std),
         spectral_crest_mean: Some(crest_mean),
         spectral_crest_std: Some(crest_std),
-        roughness_mean: Some(rough_mean),
-        roughness_std: Some(rough_std),
+        roughness_mean: Some(rough_mean.min(30.0)), // >30 indicates corrupt audio
+        roughness_std: Some(rough_std.min(30.0)),
         mfcc_delta_mean_json: mfcc_delta_json,
         mfcc_delta_delta_mean_json: mfcc_delta_delta_json,
         stereo_width_mean: Some(sw_mean),
