@@ -1007,6 +1007,18 @@ mod tests {
             tail_silence_pct: None,
             head_rms_db: None,
             head_silence_pct: None,
+            centroid_dmean: None,
+            centroid_dvar: None,
+            flux_dmean: None,
+            flux_dvar: None,
+            roughness_dmean: None,
+            roughness_dvar: None,
+            bass_energy_dmean: None,
+            beat_loudness_mean: None,
+            beat_loudness_std: None,
+            beat_loudness_band_ratio_json: None,
+            danceability: None,
+            harmonic_section_count: None,
         }
     }
 

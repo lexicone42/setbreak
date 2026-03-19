@@ -1261,4 +1261,79 @@ pub const ANALYSIS_SCHEMA: &[ColumnDef] = &[
         category: "Boundary",
         description: "Fraction of first 1s below -40 dBFS",
     },
+    // v19: Feature derivatives
+    ColumnDef {
+        name: "centroid_dmean",
+        sql_type: "REAL",
+        category: "Derivative",
+        description: "Mean brightness change rate (positive = getting brighter)",
+    },
+    ColumnDef {
+        name: "centroid_dvar",
+        sql_type: "REAL",
+        category: "Derivative",
+        description: "Variance of brightness change (high = erratic shifts)",
+    },
+    ColumnDef {
+        name: "flux_dmean",
+        sql_type: "REAL",
+        category: "Derivative",
+        description: "Mean texture acceleration (positive = speeding up)",
+    },
+    ColumnDef {
+        name: "flux_dvar",
+        sql_type: "REAL",
+        category: "Derivative",
+        description: "Variance of texture change rate",
+    },
+    ColumnDef {
+        name: "roughness_dmean",
+        sql_type: "REAL",
+        category: "Derivative",
+        description: "Mean dissonance trajectory (positive = building tension)",
+    },
+    ColumnDef {
+        name: "roughness_dvar",
+        sql_type: "REAL",
+        category: "Derivative",
+        description: "Variance of dissonance change rate",
+    },
+    ColumnDef {
+        name: "bass_energy_dmean",
+        sql_type: "REAL",
+        category: "Derivative",
+        description: "Mean bass energy trajectory (positive = bass building)",
+    },
+    // v19: Beat loudness
+    ColumnDef {
+        name: "beat_loudness_mean",
+        sql_type: "REAL",
+        category: "Rhythm",
+        description: "Mean energy at beat positions (how strong the beats are)",
+    },
+    ColumnDef {
+        name: "beat_loudness_std",
+        sql_type: "REAL",
+        category: "Rhythm",
+        description: "Std dev of beat energy (high = dynamic accents)",
+    },
+    ColumnDef {
+        name: "beat_loudness_band_ratio_json",
+        sql_type: "TEXT",
+        category: "Rhythm",
+        description: "[f32; 3] bass/mid/high energy ratio at beat positions",
+    },
+    // v19: Danceability and structure
+    ColumnDef {
+        name: "danceability",
+        sql_type: "REAL",
+        category: "Rhythm",
+        description: "Rhythm predictability (0-1, high = danceable, low = free)",
+    },
+    ColumnDef {
+        name: "harmonic_section_count",
+        sql_type: "INT",
+        category: "Structure",
+        description: "Distinct harmonic sections (from chroma novelty)",
+    },
 ];

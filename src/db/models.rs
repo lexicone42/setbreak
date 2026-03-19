@@ -300,6 +300,20 @@ pub struct NewAnalysis {
     pub tail_silence_pct: Option<f64>,
     pub head_rms_db: Option<f64>,
     pub head_silence_pct: Option<f64>,
+
+    // Feature derivatives and new features (v19)
+    pub centroid_dmean: Option<f64>,
+    pub centroid_dvar: Option<f64>,
+    pub flux_dmean: Option<f64>,
+    pub flux_dvar: Option<f64>,
+    pub roughness_dmean: Option<f64>,
+    pub roughness_dvar: Option<f64>,
+    pub bass_energy_dmean: Option<f64>,
+    pub beat_loudness_mean: Option<f64>,
+    pub beat_loudness_std: Option<f64>,
+    pub beat_loudness_band_ratio_json: Option<String>,
+    pub danceability: Option<f64>,
+    pub harmonic_section_count: Option<i32>,
 }
 
 /// Chord event for relational storage.

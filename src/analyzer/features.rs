@@ -538,6 +538,21 @@ pub fn extract(track_id: i64, r: &AnalysisResult) -> ExtractionResult {
         tail_silence_pct: None,
         head_rms_db: None,
         head_silence_pct: None,
+
+        // v19 feature derivatives and new features
+        centroid_dmean: Some(r.spectral.centroid_dmean as f64),
+        centroid_dvar: Some(r.spectral.centroid_dvar as f64),
+        flux_dmean: Some(r.spectral.flux_dmean as f64),
+        flux_dvar: Some(r.spectral.flux_dvar as f64),
+        roughness_dmean: Some(r.spectral.roughness_dmean as f64),
+        roughness_dvar: Some(r.spectral.roughness_dvar as f64),
+        bass_energy_dmean: Some(r.spectral.bass_energy_dmean as f64),
+        beat_loudness_mean: Some(r.spectral.beat_loudness_mean as f64),
+        beat_loudness_std: Some(r.spectral.beat_loudness_std as f64),
+        beat_loudness_band_ratio_json: serde_json::to_string(&r.spectral.beat_loudness_band_ratio)
+            .ok(),
+        danceability: Some(r.spectral.danceability as f64),
+        harmonic_section_count: Some(r.spectral.harmonic_section_count as i32),
     };
 
     ExtractionResult {

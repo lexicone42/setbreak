@@ -107,8 +107,11 @@ impl Database {
         if version < 18 {
             self.migrate_v18()?;
         }
+        if version < 19 {
+            self.migrate_v19()?;
+        }
 
-        self.conn.pragma_update(None, "user_version", 18)?;
+        self.conn.pragma_update(None, "user_version", 19)?;
         Ok(())
     }
 
@@ -771,6 +774,30 @@ impl Database {
         try_add_column(&self.conn, "analysis_results", "tail_silence_pct REAL")?;
         try_add_column(&self.conn, "analysis_results", "head_rms_db REAL")?;
         try_add_column(&self.conn, "analysis_results", "head_silence_pct REAL")?;
+        Ok(())
+    }
+
+    /// V19: Feature derivatives, beat loudness, danceability, harmonic sections
+    fn migrate_v19(&self) -> Result<()> {
+        // Feature derivative statistics (dmean/dvar)
+        try_add_column(&self.conn, "analysis_results", "centroid_dmean REAL")?;
+        try_add_column(&self.conn, "analysis_results", "centroid_dvar REAL")?;
+        try_add_column(&self.conn, "analysis_results", "flux_dmean REAL")?;
+        try_add_column(&self.conn, "analysis_results", "flux_dvar REAL")?;
+        try_add_column(&self.conn, "analysis_results", "roughness_dmean REAL")?;
+        try_add_column(&self.conn, "analysis_results", "roughness_dvar REAL")?;
+        try_add_column(&self.conn, "analysis_results", "bass_energy_dmean REAL")?;
+        // Beat loudness
+        try_add_column(&self.conn, "analysis_results", "beat_loudness_mean REAL")?;
+        try_add_column(&self.conn, "analysis_results", "beat_loudness_std REAL")?;
+        try_add_column(
+            &self.conn,
+            "analysis_results",
+            "beat_loudness_band_ratio_json TEXT",
+        )?;
+        // Danceability and harmonic sections
+        try_add_column(&self.conn, "analysis_results", "danceability REAL")?;
+        try_add_column(&self.conn, "analysis_results", "harmonic_section_count INT")?;
         Ok(())
     }
 }

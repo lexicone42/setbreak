@@ -320,6 +320,10 @@ impl Database {
                 major_frame_ratio, major_chord_ratio,
                 dynamics_entropy, dynamics_slope, dynamics_peak_count, key_change_count,
                 tail_rms_db, tail_silence_pct, head_rms_db, head_silence_pct,
+                centroid_dmean, centroid_dvar, flux_dmean, flux_dvar,
+                roughness_dmean, roughness_dvar, bass_energy_dmean,
+                beat_loudness_mean, beat_loudness_std, beat_loudness_band_ratio_json,
+                danceability, harmonic_section_count,
                 analyzed_at
             ) VALUES (
                 ?1,
@@ -391,6 +395,10 @@ impl Database {
                 ?184, ?185,
                 ?186, ?187, ?188, ?189,
                 ?190, ?191, ?192, ?193,
+                ?194, ?195, ?196, ?197,
+                ?198, ?199, ?200,
+                ?201, ?202, ?203,
+                ?204, ?205,
                 datetime('now')
             )
             ON CONFLICT(track_id) DO UPDATE SET
@@ -573,6 +581,18 @@ impl Database {
                 tail_silence_pct = excluded.tail_silence_pct,
                 head_rms_db = excluded.head_rms_db,
                 head_silence_pct = excluded.head_silence_pct,
+                centroid_dmean = excluded.centroid_dmean,
+                centroid_dvar = excluded.centroid_dvar,
+                flux_dmean = excluded.flux_dmean,
+                flux_dvar = excluded.flux_dvar,
+                roughness_dmean = excluded.roughness_dmean,
+                roughness_dvar = excluded.roughness_dvar,
+                bass_energy_dmean = excluded.bass_energy_dmean,
+                beat_loudness_mean = excluded.beat_loudness_mean,
+                beat_loudness_std = excluded.beat_loudness_std,
+                beat_loudness_band_ratio_json = excluded.beat_loudness_band_ratio_json,
+                danceability = excluded.danceability,
+                harmonic_section_count = excluded.harmonic_section_count,
                 analyzed_at = datetime('now')
             ",
             params![
@@ -646,6 +666,10 @@ impl Database {
                 a.major_frame_ratio, a.major_chord_ratio,
                 a.dynamics_entropy, a.dynamics_slope, a.dynamics_peak_count, a.key_change_count,
                 a.tail_rms_db, a.tail_silence_pct, a.head_rms_db, a.head_silence_pct,
+                a.centroid_dmean, a.centroid_dvar, a.flux_dmean, a.flux_dvar,
+                a.roughness_dmean, a.roughness_dvar, a.bass_energy_dmean,
+                a.beat_loudness_mean, a.beat_loudness_std, a.beat_loudness_band_ratio_json,
+                a.danceability, a.harmonic_section_count,
             ],
         )?;
         Ok(())
@@ -883,6 +907,18 @@ impl Database {
                     tail_silence_pct: None,
                     head_rms_db: None,
                     head_silence_pct: None,
+                    centroid_dmean: None,
+                    centroid_dvar: None,
+                    flux_dmean: None,
+                    flux_dvar: None,
+                    roughness_dmean: None,
+                    roughness_dvar: None,
+                    bass_energy_dmean: None,
+                    beat_loudness_mean: None,
+                    beat_loudness_std: None,
+                    beat_loudness_band_ratio_json: None,
+                    danceability: None,
+                    harmonic_section_count: None,
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -1943,6 +1979,18 @@ mod tests {
             tail_silence_pct: None,
             head_rms_db: None,
             head_silence_pct: None,
+            centroid_dmean: None,
+            centroid_dvar: None,
+            flux_dmean: None,
+            flux_dvar: None,
+            roughness_dmean: None,
+            roughness_dvar: None,
+            bass_energy_dmean: None,
+            beat_loudness_mean: None,
+            beat_loudness_std: None,
+            beat_loudness_band_ratio_json: None,
+            danceability: None,
+            harmonic_section_count: None,
         }
     }
 
