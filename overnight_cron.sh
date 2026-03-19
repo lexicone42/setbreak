@@ -54,10 +54,18 @@ log "========================================"
 log "Scanning for new files..."
 "$SETBREAK" scan --db-path "$DB_PATH" >> "$LOG_FILE" 2>&1 || true
 
+# ── Check for force-reanalyze trigger ────────────────────────────────
+FORCE_FLAG=""
+FORCE_FILE="$SCRIPT_DIR/.reanalyze"
+if [ -f "$FORCE_FILE" ]; then
+    FORCE_FLAG="--force"
+    log "Force re-analysis triggered (found $FORCE_FILE)"
+fi
+
 UNANALYZED=$(sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM tracks t LEFT JOIN analysis_results ar ON t.id = ar.track_id WHERE ar.track_id IS NULL;")
 log "Tracks remaining to analyze: $UNANALYZED"
 
-if [ "$UNANALYZED" -eq 0 ]; then
+if [ "$UNANALYZED" -eq 0 ] && [ -z "$FORCE_FLAG" ]; then
     log "Nothing to analyze. Running rescore + boundary extraction instead."
     "$SETBREAK" rescore --db-path "$DB_PATH" >> "$LOG_FILE" 2>&1 || true
     "$SETBREAK" extract-boundaries -j "$JOBS" --db-path "$DB_PATH" >> "$LOG_FILE" 2>&1 || true
@@ -66,7 +74,7 @@ if [ "$UNANALYZED" -eq 0 ]; then
 fi
 
 # ── Launch analysis ─────────────────────────────────────────────────
-RUST_LOG=info "$SETBREAK" analyze -j "$JOBS" --db-path "$DB_PATH" -v >> "$LOG_FILE" 2>&1 &
+RUST_LOG=info "$SETBREAK" analyze -j "$JOBS" $FORCE_FLAG --db-path "$DB_PATH" -v >> "$LOG_FILE" 2>&1 &
 ANALYZE_PID=$!
 log "Analysis started (PID $ANALYZE_PID)"
 
@@ -136,5 +144,12 @@ log "Extracting boundary features..."
 
 log "Rescoring..."
 "$SETBREAK" rescore --db-path "$DB_PATH" >> "$LOG_FILE" 2>&1 || true
+
+# Remove force-reanalyze trigger if the backlog is clear
+# (keeps re-analyzing nightly until all tracks are done)
+if [ -f "$FORCE_FILE" ] && [ "$REMAINING" -eq 0 ]; then
+    rm -f "$FORCE_FILE"
+    log "Force re-analysis complete — trigger file removed."
+fi
 
 log "Done. Full log: $LOG_FILE"
