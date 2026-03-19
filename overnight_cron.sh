@@ -131,12 +131,24 @@ ANALYZED_NOW=$(sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM analysis_results;")
 REMAINING=$(sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM tracks t LEFT JOIN analysis_results ar ON t.id = ar.track_id WHERE ar.track_id IS NULL;")
 DONE_THIS_RUN=$((UNANALYZED - REMAINING))
 
-log "========================================"
-log "Analysis stopped (exit code: $EXIT_CODE)"
-log "Analyzed this run: $DONE_THIS_RUN"
-log "Total analyzed: $ANALYZED_NOW"
-log "Remaining: $REMAINING"
-log "========================================"
+# For --force re-analysis, count tracks updated today instead
+if [ -n "$FORCE_FLAG" ]; then
+    REANALYZED=$(sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM analysis_results WHERE analyzed_at >= date('now', '-1 day');")
+    log "========================================"
+    log "Analysis stopped (exit code: $EXIT_CODE)"
+    log "Re-analyzed this run: $REANALYZED (force mode)"
+    log "Total analyzed: $ANALYZED_NOW"
+    log "New tracks remaining: $REMAINING"
+    log "Re-analysis remaining: $((ANALYZED_NOW - REANALYZED))"
+    log "========================================"
+else
+    log "========================================"
+    log "Analysis stopped (exit code: $EXIT_CODE)"
+    log "Analyzed this run: $DONE_THIS_RUN"
+    log "Total analyzed: $ANALYZED_NOW"
+    log "Remaining: $REMAINING"
+    log "========================================"
+fi
 
 # ── Post-analysis: boundary extraction + rescore ────────────────────
 log "Extracting boundary features..."
@@ -145,11 +157,17 @@ log "Extracting boundary features..."
 log "Rescoring..."
 "$SETBREAK" rescore --db-path "$DB_PATH" >> "$LOG_FILE" 2>&1 || true
 
-# Remove force-reanalyze trigger if the backlog is clear
-# (keeps re-analyzing nightly until all tracks are done)
-if [ -f "$FORCE_FILE" ] && [ "$REMAINING" -eq 0 ]; then
-    rm -f "$FORCE_FILE"
-    log "Force re-analysis complete — trigger file removed."
+# Remove force-reanalyze trigger when ALL tracks have v19 features.
+# For --force re-analysis, "done" = every track has been re-analyzed,
+# not just that there are no new unanalyzed tracks.
+if [ -f "$FORCE_FILE" ]; then
+    V19_MISSING=$(sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM analysis_results WHERE centroid_dmean IS NULL;")
+    if [ "$V19_MISSING" -eq 0 ] && [ "$REMAINING" -eq 0 ]; then
+        rm -f "$FORCE_FILE"
+        log "Force re-analysis complete — all tracks have v19 features. Trigger file removed."
+    else
+        log "Force re-analysis continues: $V19_MISSING tracks still need v19 features, $REMAINING unanalyzed."
+    fi
 fi
 
 log "Done. Full log: $LOG_FILE"
