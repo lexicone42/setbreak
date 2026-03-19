@@ -358,13 +358,10 @@ These are computed from the time-series vectors during extraction — they captu
 
 ### Musical Key / Chord (13 features + 1 JSON)
 
-> **Note on key detection accuracy.** The chroma extraction uses a CQT-style
-> filterbank (triangular filters at semitone frequencies across 5 octaves, folded
-> into 12 pitch classes). This produces 19+ distinct keys across a library and
-> 7-12 distinct keys per show. Root note detection is correct ~60% of the time
-> on known-key songs; mode classification (major vs minor vs modal) is less
-> reliable. Key detection for live recordings is inherently harder than for
-> studio recordings due to tuning variance, improvisation, and spectral bleed.
+> **Note on key detection accuracy.** Uses a CQT-style filterbank with 8192-point
+> STFT (5.4 Hz/bin) for semitone-accurate chroma. Root note detection is correct
+> ~45% of the time on live guitar-band recordings, with a residual E bias from
+> bass guitar. See [Known Limitations](#known-limitations) for details.
 
 | Feature | Description |
 |---------|-------------|
@@ -1269,11 +1266,24 @@ stored 12-dimensional chroma vectors.
 
 ### Chroma Extraction: CQT Filterbank
 
-The chroma extraction uses a CQT-style filterbank (constant-Q chromagram) instead of
-naive FFT-to-pitch-class mapping. This gives each pitch class equal representation
-across octaves, avoiding the bass-frequency bias that plagues direct FFT approaches.
-Key detection produces 19+ distinct keys across a library and 7-12 per show.
-Root note accuracy is ~60% on known-key songs; mode classification is approximate.
+The chroma extraction uses a CQT-style filterbank (constant-Q chromagram) with a
+dedicated 8192-point STFT for semitone-accurate frequency resolution (5.4 Hz/bin).
+This gives each pitch class equal representation across octaves.
+
+**Accuracy:** Root note detection is correct ~45% of the time on known-key live
+recordings. Mode classification (major vs minor vs modal) is less reliable.
+Key detection produces 5+ distinct keys per show (was 1 before the CQT fix).
+
+**Known limitation:** There is a residual bias toward E in guitar-band recordings,
+caused by the open E string (82 Hz) on bass guitar dominating the low-frequency
+chroma. This affects root detection but not relative similarity (harmonic-match
+still finds musically meaningful relationships). Fixing this would require
+harmonic/percussive separation (HPSS) before chroma computation — a future
+improvement.
+
+**For forkers:** If your corpus is not guitar-based music (e.g., electronic,
+orchestral, piano), you may see better key accuracy since the E-string bias
+won't apply.
 
 ### How It Works
 
@@ -1492,6 +1502,55 @@ those formats), regex (if not parsing filenames)
 
 This gives you a ~12 MB binary that can scan, analyze, and query any MP3/FLAC/WAV/OGG
 library with 213 features per track.
+
+---
+
+## Known Limitations
+
+Be aware of these when interpreting results or building scores:
+
+### Key Detection (~45% root accuracy on live recordings)
+The CQT chromagram filterbank with 8192-point STFT produces correct root notes
+~45% of the time on live jam-band recordings. Mode classification (major vs minor
+vs modal) is less reliable. There is a residual bias toward E on guitar-based
+recordings (bass guitar open E string at 82 Hz dominates low-frequency chroma).
+Studio recordings and non-guitar music will likely see better accuracy. The
+`harmonic-match` command still finds meaningful *relative* harmonic similarity
+despite the absolute key bias.
+
+### Tempo Octave Ambiguity (~8% of tracks)
+About 8% of tracks have tempo detected at double the intended rate (e.g., 200 BPM
+instead of 100). This happens when eighth-note patterns create genuine autocorrelation
+peaks at both the quarter-note and eighth-note period. The octave correction catches
+most cases but can't resolve truly ambiguous rhythms. Songs with strong, even
+eighth-note strumming (rock, country) are most affected. Tempo-dependent scores
+(groove, tightness, improvisation) may be distorted for these tracks.
+
+### Degenerate Features (low discrimination)
+These features are computed but provide little differentiation in live-band corpora:
+- **`coherence_score`**: 99.8% of tracks = 1.0 (effectively constant)
+- **`syncopation`**: CV = 0.075 (barely varies)
+- **`onset_interval_entropy`**: CV = 0.074 (barely varies)
+- **`solo_section_ratio`**: Always 0.0 (upstream ferrous-waves limitation)
+- **`vibrato_presence`**: Always ~0.7 (low variance)
+- **`flux_dmean`**: Nearly always ≈0 (second derivative of spectral flux is in the noise floor)
+
+These are safe to ignore in score formulas. They're kept in the schema for corpora
+where they might discriminate (e.g., solo_section_ratio on studio recordings with
+isolated instrument tracks).
+
+### Beat Loudness Mean (~0.92 average)
+The `beat_loudness_mean` measures sub-band energy *at* beat positions as a fraction
+of total energy. In music (as opposed to speech or ambient audio), beats naturally
+carry the majority of energy, so this value is always high. The `beat_loudness_std`
+is more discriminating (range 0.01–0.21) — high std indicates dynamic accents.
+
+### Crowd Energy (live recordings only)
+The `crowd_energy_mean/std` features measure 3-6 kHz spectral energy as an audience
+noise proxy. This only works for soundboard (SBD) recordings where crowd noise
+bleeds into the mix above 3 kHz. For audience recordings (where the crowd IS the
+signal), studio recordings (no audience), or electronic music, these features are
+meaningless. Check `recording_type = 'live'` before using.
 
 ---
 
