@@ -1,6 +1,6 @@
 # Forking SetBreak: Building Your Own Audio Analysis Tool
 
-SetBreak is a Rust CLI that extracts **193 audio features** from music files, stores them
+SetBreak is a Rust CLI that extracts **213 audio features** from music files, stores them
 in SQLite, computes domain-specific scores, and provides similarity search. It was built
 for jam-band analysis (Grateful Dead, Phish), but the core engine is genre-agnostic.
 
@@ -53,7 +53,7 @@ The codebase has a clean separation between three layers:
 
 **Layer 1 — Audio Pipeline (keep as-is).** Decodes audio files in any format (MP3,
 FLAC, WAV, SHN, APE, WavPack, OGG, M4A, AAC, OPUS — all via pure Rust, no ffmpeg
-needed), runs them through the ferrous-waves DSP engine, extracts 193 features, and
+needed), runs them through the ferrous-waves DSP engine, extracts 213 features, and
 stores them in SQLite. This layer is completely genre-agnostic.
 
 **Layer 2 — Scoring & Analysis (rewrite for your domain).** The 10 "jam scores"
@@ -162,7 +162,7 @@ You just change the subcommands.
 
 ## The Complete Feature Inventory
 
-These 193 features are extracted for every track, regardless of genre. They're stored as
+These 213 features are extracted for every track, regardless of genre. They're stored as
 typed SQLite columns and available for scoring, similarity, and direct SQL queries.
 
 ### Summary (6 features)
@@ -427,9 +427,67 @@ These are computed from the time-series vectors during extraction — they captu
 | `head_rms_db` | RMS of the first 1 second in dBFS |
 | `head_silence_pct` | Fraction of first 1 second below -40 dBFS |
 
+### Feature Derivatives (7 features)
+Capture how features CHANGE over time — the *trajectory*, not just the average.
+
+| Feature | Description |
+|---------|-------------|
+| `centroid_dmean` | Mean brightness change rate (+ve = getting brighter over time) |
+| `centroid_dvar` | Variance of brightness changes (high = erratic timbral shifts) |
+| `flux_dmean` | Mean texture change acceleration (+ve = energy delivery speeding up) |
+| `flux_dvar` | Variance of texture change rate |
+| `roughness_dmean` | Mean dissonance trajectory (+ve = tension building, -ve = releasing) |
+| `roughness_dvar` | Variance of dissonance change rate |
+| `bass_energy_dmean` | Mean bass energy trajectory (+ve = bass building) |
+
+### Beat Loudness (3 features)
+Energy measured specifically at beat positions (Essentia-inspired).
+
+| Feature | Description |
+|---------|-------------|
+| `beat_loudness_mean` | Mean energy at beat positions (how strong the beats are) |
+| `beat_loudness_std` | Std dev of beat energy (high = dynamic accents, low = steady) |
+| `beat_loudness_band_ratio_json` | [f32; 3] bass/mid/high energy ratio at beat positions |
+
+### Jam Analysis (2 features)
+Novel features for measuring improvisational departure.
+
+| Feature | Description |
+|---------|-------------|
+| `timbral_departure_max` | Max timbral distance from opening 60s — "how far out did the jam go?" |
+| `timbral_departure_mean` | Mean timbral distance — high mean = the jam left home and didn't come back |
+
+### Live Recording (2 features)
+Audience energy proxy from soundboard recording bleed.
+
+| Feature | Description |
+|---------|-------------|
+| `crowd_energy_mean` | Mean 3-6 kHz energy ratio (crowd noise in SBD recordings) |
+| `crowd_energy_std` | Std dev — high = audience reacts to specific moments |
+
+### Texture (2 features)
+Frame-to-frame spectral surprise.
+
+| Feature | Description |
+|---------|-------------|
+| `spectral_novelty_mean` | Mean spectral cosine distance between adjacent frames (high = exploratory) |
+| `spectral_novelty_std` | Std dev — high = alternating between novel and familiar passages |
+
+### Additional Rhythm (3 features)
+| Feature | Description |
+|---------|-------------|
+| `danceability` | Rhythm predictability from onset envelope autocorrelation (0-1) |
+| `groove_stability_mean` | Mean rolling 30s flux CV (low = consistently groovy) |
+| `groove_stability_std` | Std dev of rolling flux CV (high = lock-in moments detected) |
+
+### Additional Structure (1 feature)
+| Feature | Description |
+|---------|-------------|
+| `harmonic_section_count` | Distinct harmonic regions detected from chroma novelty curve |
+
 ### Relational Detail Tables (stored per-track, not as columns)
 
-In addition to the 193 scalar/JSON features, four detail tables store event-level data:
+In addition to the 213 scalar/JSON features, four detail tables store event-level data:
 
 **track_chords** — Per-chord timestamps with confidence:
 ```sql
@@ -464,7 +522,7 @@ SELECT time, transition_type, strength, duration FROM track_transitions WHERE tr
 |------|-----|
 | `analyzer/mod.rs` | Analysis pipeline orchestration, memory management, chunked processing |
 | `analyzer/decode.rs` | Multi-format decoding with 96kHz safety, DTS detection |
-| `analyzer/features.rs` | All 193 features extracted here — genre-agnostic |
+| `analyzer/features.rs` | All 213 features extracted here — genre-agnostic |
 | `analyzer/boundary.rs` | Track head/tail features (useful beyond segues) |
 | `similarity.rs` | Z-score normalization + cosine similarity + k-NN |
 | `score_lab.rs` | Interactive formula testing (evalexpr, your main iteration tool) |
@@ -644,7 +702,7 @@ collaborative filtering.
 ### What to Keep
 Everything in the reusable core. The similarity system is already a recommendation
 engine — it finds the 20 most acoustically similar tracks using cosine distance over
-all 193 features.
+all 213 features.
 
 ### Scores to Design
 
@@ -1076,7 +1134,7 @@ harmonic vs percussive balance.
 
 ### "I want to analyze song structure"
 **Primary:** `segment_count`, `section_diversity_score`, `transition_count`, `energy_shape`,
-`tension_build_count`, `tension_release_count`, `energy_peak_count`
+`tension_build_count`, `tension_release_count`, `energy_peak_count`, `harmonic_section_count`
 
 **Detail tables:** `track_segments` (per-section data), `track_transitions` (section boundaries),
 `track_tension_points` (build/release moments)
@@ -1084,9 +1142,23 @@ harmonic vs percussive balance.
 ### "I want to find rhythmically similar tracks"
 **Primary:** `tempo_bpm`, `tempo_stability`, `swing_ratio`, `beat_regularity`,
 `onset_interval_entropy`, `offbeat_ratio`, `syncopation`, `pulse_clarity`,
-`microtiming_deviation_mean`, `rhythmic_periodicity_strength`
+`microtiming_deviation_mean`, `rhythmic_periodicity_strength`, `danceability`,
+`groove_stability_mean`, `beat_loudness_mean`
 
-**JSON:** `beat_pattern_json`, `temporal_modulation_json`
+**JSON:** `beat_pattern_json`, `temporal_modulation_json`, `beat_loudness_band_ratio_json`
+
+### "I want to measure improvisation / jam quality"
+**Primary:** `timbral_departure_max` (how far out), `timbral_departure_mean` (did it come
+back?), `spectral_novelty_mean` (how surprising), `groove_stability_std` (lock-in moments),
+`harmonic_section_count` (distinct harmonic regions), `key_change_count`
+
+**Derivatives:** `centroid_dmean` (brightness trajectory), `roughness_dmean` (tension arc),
+`flux_dmean` (texture acceleration), `bass_energy_dmean` (bass build)
+
+### "I want to analyze audience response (live recordings)"
+**Primary:** `crowd_energy_mean` (overall excitement), `crowd_energy_std` (reaction to
+specific moments). Works with SBD recordings where crowd noise bleeds in above 3 kHz.
+Not meaningful for studio recordings or audience recordings (where crowd is the signal).
 
 ### "I want to analyze harmonic content"
 **Primary:** `estimated_key`, `chord_count`, `chord_change_rate`,
@@ -1283,7 +1355,7 @@ setbreak schema --grep bass --json
 - Total binary size: ~15 MB (includes bundled SQLite)
 
 ### Database Size
-- ~10 KB per analyzed track (193 columns + detail tables)
+- ~10 KB per analyzed track (213 columns + detail tables)
 - 10,000 tracks ≈ 100 MB database
 - WAL mode means reads never block writes and vice versa
 
@@ -1419,7 +1491,7 @@ claxon, lofty, anyhow/thiserror, chrono, directories, log/env_logger, tokio, lib
 those formats), regex (if not parsing filenames)
 
 This gives you a ~12 MB binary that can scan, analyze, and query any MP3/FLAC/WAV/OGG
-library with 193 features per track.
+library with 213 features per track.
 
 ---
 
