@@ -1019,6 +1019,14 @@ mod tests {
             beat_loudness_band_ratio_json: None,
             danceability: None,
             harmonic_section_count: None,
+            timbral_departure_max: None,
+            timbral_departure_mean: None,
+            crowd_energy_mean: None,
+            crowd_energy_std: None,
+            spectral_novelty_mean: None,
+            spectral_novelty_std: None,
+            groove_stability_mean: None,
+            groove_stability_std: None,
         }
     }
 

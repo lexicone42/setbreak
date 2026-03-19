@@ -1336,4 +1336,53 @@ pub const ANALYSIS_SCHEMA: &[ColumnDef] = &[
         category: "Structure",
         description: "Distinct harmonic sections (from chroma novelty)",
     },
+    // v19b: Novel features
+    ColumnDef {
+        name: "timbral_departure_max",
+        sql_type: "REAL",
+        category: "Jam",
+        description: "Max timbral distance from opening 60s (how far out the jam goes)",
+    },
+    ColumnDef {
+        name: "timbral_departure_mean",
+        sql_type: "REAL",
+        category: "Jam",
+        description: "Mean timbral distance from opening (sustained departure)",
+    },
+    ColumnDef {
+        name: "crowd_energy_mean",
+        sql_type: "REAL",
+        category: "Live",
+        description: "Mean 3-6kHz energy ratio (crowd noise proxy in SBD recordings)",
+    },
+    ColumnDef {
+        name: "crowd_energy_std",
+        sql_type: "REAL",
+        category: "Live",
+        description: "Std dev of crowd energy (high = audience reacts to moments)",
+    },
+    ColumnDef {
+        name: "spectral_novelty_mean",
+        sql_type: "REAL",
+        category: "Texture",
+        description: "Mean frame-to-frame spectral surprise (high = exploratory)",
+    },
+    ColumnDef {
+        name: "spectral_novelty_std",
+        sql_type: "REAL",
+        category: "Texture",
+        description: "Std dev of spectral novelty (high = alternating novel/familiar)",
+    },
+    ColumnDef {
+        name: "groove_stability_mean",
+        sql_type: "REAL",
+        category: "Rhythm",
+        description: "Mean rolling flux CV (low = consistently groovy)",
+    },
+    ColumnDef {
+        name: "groove_stability_std",
+        sql_type: "REAL",
+        category: "Rhythm",
+        description: "Std dev of rolling flux CV (high = lock-in moments detected)",
+    },
 ];

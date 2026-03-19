@@ -798,6 +798,19 @@ impl Database {
         // Danceability and harmonic sections
         try_add_column(&self.conn, "analysis_results", "danceability REAL")?;
         try_add_column(&self.conn, "analysis_results", "harmonic_section_count INT")?;
+        // Novel features: jam departure, crowd energy, spectral novelty, groove stability
+        try_add_column(&self.conn, "analysis_results", "timbral_departure_max REAL")?;
+        try_add_column(
+            &self.conn,
+            "analysis_results",
+            "timbral_departure_mean REAL",
+        )?;
+        try_add_column(&self.conn, "analysis_results", "crowd_energy_mean REAL")?;
+        try_add_column(&self.conn, "analysis_results", "crowd_energy_std REAL")?;
+        try_add_column(&self.conn, "analysis_results", "spectral_novelty_mean REAL")?;
+        try_add_column(&self.conn, "analysis_results", "spectral_novelty_std REAL")?;
+        try_add_column(&self.conn, "analysis_results", "groove_stability_mean REAL")?;
+        try_add_column(&self.conn, "analysis_results", "groove_stability_std REAL")?;
         Ok(())
     }
 }

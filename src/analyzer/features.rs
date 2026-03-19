@@ -553,6 +553,14 @@ pub fn extract(track_id: i64, r: &AnalysisResult) -> ExtractionResult {
             .ok(),
         danceability: Some(r.spectral.danceability as f64),
         harmonic_section_count: Some(r.spectral.harmonic_section_count as i32),
+        timbral_departure_max: Some(r.spectral.timbral_departure_max as f64),
+        timbral_departure_mean: Some(r.spectral.timbral_departure_mean as f64),
+        crowd_energy_mean: Some(r.spectral.crowd_energy_mean as f64),
+        crowd_energy_std: Some(r.spectral.crowd_energy_std as f64),
+        spectral_novelty_mean: Some(r.spectral.spectral_novelty_mean as f64),
+        spectral_novelty_std: Some(r.spectral.spectral_novelty_std as f64),
+        groove_stability_mean: Some(r.spectral.groove_stability_mean as f64),
+        groove_stability_std: Some(r.spectral.groove_stability_std as f64),
     };
 
     ExtractionResult {

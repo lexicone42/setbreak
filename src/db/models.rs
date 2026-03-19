@@ -314,6 +314,14 @@ pub struct NewAnalysis {
     pub beat_loudness_band_ratio_json: Option<String>,
     pub danceability: Option<f64>,
     pub harmonic_section_count: Option<i32>,
+    pub timbral_departure_max: Option<f64>,
+    pub timbral_departure_mean: Option<f64>,
+    pub crowd_energy_mean: Option<f64>,
+    pub crowd_energy_std: Option<f64>,
+    pub spectral_novelty_mean: Option<f64>,
+    pub spectral_novelty_std: Option<f64>,
+    pub groove_stability_mean: Option<f64>,
+    pub groove_stability_std: Option<f64>,
 }
 
 /// Chord event for relational storage.

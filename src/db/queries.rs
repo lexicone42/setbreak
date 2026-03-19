@@ -324,6 +324,10 @@ impl Database {
                 roughness_dmean, roughness_dvar, bass_energy_dmean,
                 beat_loudness_mean, beat_loudness_std, beat_loudness_band_ratio_json,
                 danceability, harmonic_section_count,
+                timbral_departure_max, timbral_departure_mean,
+                crowd_energy_mean, crowd_energy_std,
+                spectral_novelty_mean, spectral_novelty_std,
+                groove_stability_mean, groove_stability_std,
                 analyzed_at
             ) VALUES (
                 ?1,
@@ -399,6 +403,10 @@ impl Database {
                 ?198, ?199, ?200,
                 ?201, ?202, ?203,
                 ?204, ?205,
+                ?206, ?207,
+                ?208, ?209,
+                ?210, ?211,
+                ?212, ?213,
                 datetime('now')
             )
             ON CONFLICT(track_id) DO UPDATE SET
@@ -593,6 +601,14 @@ impl Database {
                 beat_loudness_band_ratio_json = excluded.beat_loudness_band_ratio_json,
                 danceability = excluded.danceability,
                 harmonic_section_count = excluded.harmonic_section_count,
+                timbral_departure_max = excluded.timbral_departure_max,
+                timbral_departure_mean = excluded.timbral_departure_mean,
+                crowd_energy_mean = excluded.crowd_energy_mean,
+                crowd_energy_std = excluded.crowd_energy_std,
+                spectral_novelty_mean = excluded.spectral_novelty_mean,
+                spectral_novelty_std = excluded.spectral_novelty_std,
+                groove_stability_mean = excluded.groove_stability_mean,
+                groove_stability_std = excluded.groove_stability_std,
                 analyzed_at = datetime('now')
             ",
             params![
@@ -670,6 +686,10 @@ impl Database {
                 a.roughness_dmean, a.roughness_dvar, a.bass_energy_dmean,
                 a.beat_loudness_mean, a.beat_loudness_std, a.beat_loudness_band_ratio_json,
                 a.danceability, a.harmonic_section_count,
+                a.timbral_departure_max, a.timbral_departure_mean,
+                a.crowd_energy_mean, a.crowd_energy_std,
+                a.spectral_novelty_mean, a.spectral_novelty_std,
+                a.groove_stability_mean, a.groove_stability_std,
             ],
         )?;
         Ok(())
@@ -919,6 +939,14 @@ impl Database {
                     beat_loudness_band_ratio_json: None,
                     danceability: None,
                     harmonic_section_count: None,
+                    timbral_departure_max: None,
+                    timbral_departure_mean: None,
+                    crowd_energy_mean: None,
+                    crowd_energy_std: None,
+                    spectral_novelty_mean: None,
+                    spectral_novelty_std: None,
+                    groove_stability_mean: None,
+                    groove_stability_std: None,
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -1991,6 +2019,14 @@ mod tests {
             beat_loudness_band_ratio_json: None,
             danceability: None,
             harmonic_section_count: None,
+            timbral_departure_max: None,
+            timbral_departure_mean: None,
+            crowd_energy_mean: None,
+            crowd_energy_std: None,
+            spectral_novelty_mean: None,
+            spectral_novelty_std: None,
+            groove_stability_mean: None,
+            groove_stability_std: None,
         }
     }
 
